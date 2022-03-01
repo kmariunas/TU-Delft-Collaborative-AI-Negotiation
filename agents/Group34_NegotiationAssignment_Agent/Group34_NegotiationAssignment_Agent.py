@@ -1,6 +1,9 @@
 import logging
+import sys
 from random import randint
 from typing import cast
+from typing import Callable
+
 
 from geniusweb.actions.Accept import Accept
 from geniusweb.actions.Action import Action
@@ -35,6 +38,10 @@ class Ye(DefaultParty):
         self.getReporter().log(logging.INFO, "party is initialized")
         self._profile = None
         self._last_received_bid: Bid = None
+        self._best_util: int = -sys.maxint - 1
+
+        self._e = 1
+        self._to_factor = 1
 
     def notifyChange(self, info: Inform):
         """This is the entry point of all interaction with your agent after is has been initialised.
@@ -63,6 +70,14 @@ class Ye(DefaultParty):
             # if it is an offer, set the last received bid
             if isinstance(action, Offer):
                 self._last_received_bid = cast(Offer, action).getBid()
+
+                profile = self._profile.getProfile()
+
+                bid_util = profile.getUtility(bid)
+
+                if bid_util > self._best_util:
+                    self._best_util = bid_util
+
         # YourTurn notifies you that it is your turn to act
         elif isinstance(info, YourTurn):
             # execute a turn
@@ -104,6 +119,40 @@ class Ye(DefaultParty):
     # give a description of your agent
     def getDescription(self) -> str:
         return "Template agent for Collaborative AI course"
+
+    def big_f(self) -> int:
+        # δ ∗ (1 − t^ (1/e) )
+        return self.to_factor * (self._progress.get(0) ** (1 / self.e)) # instead of 1 - t we use t since it requires remaining time until deadline
+
+    def fitness(self, bid: Bid, fn: Callable):
+        # F (t) ∗ u(ω) + (1 − F (t)) ∗ fn(ω)
+        # ω - our bid
+
+        F = self.big_f()
+
+        profile = self._profile.getProfile()
+
+        return F * profile.getUtility(bid) + (1 - F) * fn(bid)
+
+    def f5(self, bid: Bid) -> int:
+        # opponent utility
+        return randint(0, 1) # getOpponentUtility(bid)
+
+    def f1(self, bid: Bid) -> int:
+        # f1(ω) = 1 − |uˆo(ω) − uˆo (xlast)|
+        return 1 - abs(self.f5(bid) - f5(self._last_received_bid))
+
+    def f2(self, bid: Bid) -> int:
+        # f2(ω) = min(1 + uˆo (ω) − uˆo (xlast), 1)
+        return min(1 + self.f5(bid) - f5(self._last_received_bid), 1)
+
+    def f3(self, bid: Bid) -> int:
+        # f3(ω) = 1 − |uˆo (ω) − uˆo (x+)|
+        return 1 - abs(self.f5(bid) - self._best_util)
+
+    def f4(self, bid: Bid) -> int:
+        # f4(ω) = min(1 + uˆo (ω) − uˆo (x+), 1)
+        return min(1 + self.f5(bid) - self._best_util, 1)
 
     # execute a turn
     def _myTurn(self):
