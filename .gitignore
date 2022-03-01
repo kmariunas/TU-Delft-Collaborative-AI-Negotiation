@@ -2,3 +2,6 @@
 .vscode
 __pycache__
 *.xml
+*.log
+*.html
+*.json
