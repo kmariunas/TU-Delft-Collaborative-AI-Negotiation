@@ -43,6 +43,8 @@ class Ye(DefaultParty):
         self._e = 1
         self._to_factor = 1
 
+        self._n_for_greed = 500
+
     def notifyChange(self, info: Inform):
         """This is the entry point of all interaction with your agent after is has been initialised.
 
@@ -124,7 +126,7 @@ class Ye(DefaultParty):
         # δ ∗ (1 − t^ (1/e) )
         return self.to_factor * (self._progress.get(0) ** (1 / self.e)) # instead of 1 - t we use t since it requires remaining time until deadline
 
-    def fitness(self, bid: Bid, fn: Callable):
+    def fitness(self, bid: Bid) -> float:
         # F (t) ∗ u(ω) + (1 − F (t)) ∗ fn(ω)
         # ω - our bid
 
@@ -132,25 +134,25 @@ class Ye(DefaultParty):
 
         profile = self._profile.getProfile()
 
-        return F * profile.getUtility(bid) + (1 - F) * fn(bid)
+        return F * profile.getUtility(bid) + (1 - F) * self.f1(bid) # for now f1
 
-    def f5(self, bid: Bid) -> int:
+    def f5(self, bid: Bid) -> float:
         # opponent utility
         return randint(0, 1) # getOpponentUtility(bid)
 
-    def f1(self, bid: Bid) -> int:
+    def f1(self, bid: Bid) -> float:
         # f1(ω) = 1 − |uˆo(ω) − uˆo (xlast)|
         return 1 - abs(self.f5(bid) - f5(self._last_received_bid))
 
-    def f2(self, bid: Bid) -> int:
+    def f2(self, bid: Bid) -> float:
         # f2(ω) = min(1 + uˆo (ω) − uˆo (xlast), 1)
         return min(1 + self.f5(bid) - f5(self._last_received_bid), 1)
 
-    def f3(self, bid: Bid) -> int:
+    def f3(self, bid: Bid) -> float:
         # f3(ω) = 1 − |uˆo (ω) − uˆo (x+)|
         return 1 - abs(self.f5(bid) - self._best_util)
 
-    def f4(self, bid: Bid) -> int:
+    def f4(self, bid: Bid) -> float:
         # f4(ω) = min(1 + uˆo (ω) − uˆo (x+), 1)
         return min(1 + self.f5(bid) - self._best_util, 1)
 
@@ -185,9 +187,24 @@ class Ye(DefaultParty):
         domain = self._profile.getProfile().getDomain()
         all_bids = AllBidsList(domain)
 
-        # take 50 attempts at finding a random bid that is acceptable to us
-        for _ in range(50):
-            bid = all_bids.get(randint(0, all_bids.size() - 1))
-            if self._isGood(bid):
-                break
-        return bid
+        print(all_bids.size())
+
+        if all_bids.size() <= self._n_for_greed: # greedy approach
+
+            best_util = -sys.maxint - 1
+            best_bid = None
+
+            for bid in all_bids:
+                bid_util = self.fitness(bid)
+
+                if bid_util > best_util:
+                    best_bid = bid
+                    best_util = bid_util
+
+        else:
+            # take 50 attempts at finding a random bid that is acceptable to us
+            for _ in range(50):
+                best_bid = all_bids.get(randint(0, all_bids.size() - 1))
+                if self._isGood(bid):
+                    break
+        return best_bid
