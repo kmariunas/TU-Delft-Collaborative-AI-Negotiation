@@ -1,6 +1,10 @@
+import decimal
 import logging
+import sys
 from random import randint
 from typing import cast
+from typing import Callable
+
 
 from geniusweb.actions.Accept import Accept
 from geniusweb.actions.Action import Action
@@ -35,6 +39,10 @@ class Ye(DefaultParty):
         self.getReporter().log(logging.INFO, "party is initialized")
         self._profile = None
         self._last_received_bid: Bid = None
+        self._best_util: int = -sys.maxsize - 1
+
+        self._e = 2
+        self._to_factor = 1
 
     def notifyChange(self, info: Inform):
         """This is the entry point of all interaction with your agent after is has been initialised.
@@ -63,6 +71,14 @@ class Ye(DefaultParty):
             # if it is an offer, set the last received bid
             if isinstance(action, Offer):
                 self._last_received_bid = cast(Offer, action).getBid()
+
+                profile = self._profile.getProfile()
+
+                bid_util = profile.getUtility(cast(Offer, action).getBid())
+
+                if bid_util > self._best_util:
+                    self._best_util = bid_util
+
         # YourTurn notifies you that it is your turn to act
         elif isinstance(info, YourTurn):
             # execute a turn
@@ -105,6 +121,40 @@ class Ye(DefaultParty):
     def getDescription(self) -> str:
         return "Template agent for Collaborative AI course"
 
+    def big_f(self) -> float:
+        # δ ∗ (1 − t^ (1/e) )
+        return self._to_factor * (1 - self._progress.get(0) ** (1 / self._e))
+
+    def fitness(self, bid: Bid) -> float:
+        # F (t) ∗ u(ω) + (1 − F (t)) ∗ fn(ω)
+        # ω - our bid
+
+        F = self.big_f()
+
+        profile = self._profile.getProfile()
+
+        return F * float(profile.getUtility(bid)) + (1 - F) * self.f5(bid) # for now f1
+
+    def f5(self, bid: Bid) -> float:
+        # opponent utility
+        return 0.5 # getOpponentUtility(bid)
+
+    def f1(self, bid: Bid) -> float:
+        # f1(ω) = 1 − |uˆo(ω) − uˆo (xlast)|
+        return 1 - abs(self.f5(bid) - self.f5(self._last_received_bid))
+
+    def f2(self, bid: Bid) -> float:
+        # f2(ω) = min(1 + uˆo (ω) − uˆo (xlast), 1)
+        return min(1 + self.f5(bid) - self.f5(self._last_received_bid), 1)
+
+    def f3(self, bid: Bid) -> float:
+        # f3(ω) = 1 − |uˆo (ω) − uˆo (x+)|
+        return 1 - abs(self.f5(bid) - self._best_util)
+
+    def f4(self, bid: Bid) -> float:
+        # f4(ω) = min(1 + uˆo (ω) − uˆo (x+), 1)
+        return min(1 + self.f5(bid) - self._best_util, 1)
+
     # execute a turn
     def _myTurn(self):
         # check if the last received offer if the opponent is good enough
@@ -129,16 +179,27 @@ class Ye(DefaultParty):
 
         # very basic approach that accepts if the offer is valued above 0.6 and
         # 80% of the rounds towards the deadline have passed
-        return profile.getUtility(bid) > 0.6 and progress > 0.8
+        # return profile.getUtility(bid) > 0.6 and progress > 0.8
+
+        return False
 
     def _findBid(self) -> Bid:
         # compose a list of all possible bids
         domain = self._profile.getProfile().getDomain()
         all_bids = AllBidsList(domain)
 
-        # take 50 attempts at finding a random bid that is acceptable to us
-        for _ in range(50):
-            bid = all_bids.get(randint(0, all_bids.size() - 1))
-            if self._isGood(bid):
-                break
-        return bid
+        # profile = self._profile.getProfile().getReservationBid()
+
+        best_util = -sys.maxsize - 1
+        best_bid = None
+
+        for bid in all_bids:
+            bid_util = self.fitness(bid)
+
+            if bid_util > best_util:
+                best_bid = bid
+                best_util = bid_util
+
+
+
+        return best_bid
