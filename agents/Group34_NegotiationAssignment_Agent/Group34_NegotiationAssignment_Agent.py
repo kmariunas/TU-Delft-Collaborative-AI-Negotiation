@@ -1,9 +1,11 @@
 import decimal
 import logging
+import math
 import sys
 from random import randint
-from typing import cast
+from typing import cast, List
 from typing import Callable
+from decimal import Decimal
 
 
 from geniusweb.actions.Accept import Accept
@@ -41,6 +43,8 @@ class Ye(DefaultParty):
         self._last_received_bid: Bid = None
         self._best_util: int = -sys.maxsize - 1
 
+        self._received_bids: List[Bid] = list()
+
         self._e = 2
         self._to_factor = 1
 
@@ -64,7 +68,7 @@ class Ye(DefaultParty):
             self._profile = ProfileConnectionFactory.create(
                 info.getProfile().getURI(), self.getReporter()
             )
-        # ActionDone is an action send by an opponent (an offer or an accept)
+        # ActionDone is an action sent by an opponent (an offer or an accept)
         elif isinstance(info, ActionDone):
             action: Action = cast(ActionDone, info).getAction()
 
@@ -74,10 +78,13 @@ class Ye(DefaultParty):
 
                 profile = self._profile.getProfile()
 
-                bid_util = profile.getUtility(cast(Offer, action).getBid())
+                bid_util = profile.getUtility(self._last_received_bid)
 
                 if bid_util > self._best_util:
                     self._best_util = bid_util
+
+                # add bid to the received bids list
+                self._received_bids.append(self._last_received_bid)
 
         # YourTurn notifies you that it is your turn to act
         elif isinstance(info, YourTurn):
@@ -157,31 +164,105 @@ class Ye(DefaultParty):
 
     # execute a turn
     def _myTurn(self):
+        # TODO: opponent modelling
+
+        # find a bid to propose as counter offer
+        bid = self._findBid()
+
+        action = None
         # check if the last received offer if the opponent is good enough
-        if self._isGood(self._last_received_bid):
+        if self._isGood(self._last_received_bid, bid):
             # if so, accept the offer
             action = Accept(self._me, self._last_received_bid)
         else:
-            # if not, find a bid to propose as counter offer
-            bid = self._findBid()
+            # otherwise, offer the new bid
             action = Offer(self._me, bid)
 
         # send the action
         self.getConnection().send(action)
 
-    # method that checks if we would agree with an offer
-    def _isGood(self, bid: Bid) -> bool:
-        if bid is None:
+    def _isGood(self, opponent_bid: Bid, agent_bid: Bid) -> bool:
+        """
+        Method that checks if we would agree with an offer.
+
+        :param opponent_bid
+        :param agent_bid: the bid that the agent is considering to offer
+        :return True iff agent should accept opponent's bid.
+        """
+        # TODO: some shit where we accept the bid if its the last round only if its utility > reservation value
+        if opponent_bid is None:
             return False
         profile = self._profile.getProfile()
 
         progress = self._progress.get(0)
+
+        # TODO: add comms
+        return self.ac_const(opponent_bid) or self.ac_next(opponent_bid, agent_bid) or self.ac_combi_avg(opponent_bid)
 
         # very basic approach that accepts if the offer is valued above 0.6 and
         # 80% of the rounds towards the deadline have passed
         # return profile.getUtility(bid) > 0.6 and progress > 0.8
 
         return False
+
+    def ac_const(self, opponent_bid: Bid, alpha: Decimal = Decimal(0.88)) -> bool:
+        """
+        TODO: add comms
+        """
+        bid_utility = self._profile.getProfile().getUtility(opponent_bid)
+        return bid_utility >= alpha
+
+    def ac_next(self, opponent_bid: Bid, agent_bid: Bid) -> bool:
+        profile = self._profile.getProfile()
+        return profile.getUtility(opponent_bid) >= profile.getUtility(agent_bid)
+
+    def ac_combi_avg(self, opponent_bid: Bid, time: float = 0.98) -> bool:
+        """
+        TODO
+        """
+        progress = self._progress.get(0)
+        if progress >= time:
+            # get average of utility of received bids in the time interval [p - r; p]
+            # where p = progress, here it is a float, ie: 0.99
+            # r = remaining time
+            remaining_time = 1 - progress
+            max_rounds = self._progress.getDuration()
+            interval_start = math.floor((progress - remaining_time) * max_rounds)
+
+            utility_sum = 0
+            num_bids = 0
+            for bid in self._received_bids[interval_start: ]:
+                utility_sum += self._profile.getProfile().getUtility(bid)
+                num_bids += 1
+
+            avg = utility_sum / num_bids
+            return self._profile.getProfile().getUtility(opponent_bid)  >= avg
+
+        return False
+
+    def ac_combi_max(self, opponent_bid: Bid, time: float) -> bool:
+        """
+        TODO
+        """
+        progress = self._progress.get(0)
+        if progress >= time:
+            # get average of utility of received bids in the time interval [p - r; p]
+            # where p = progress, here it is a float, ie: 0.99
+            # r = remaining time
+            remaining_time = 1 - progress
+            max_rounds = self._progress.getDuration()
+            interval_start = math.floor((progress - remaining_time) * max_rounds)
+
+            max_util = Decimal(0)
+            for bid in self._received_bids[interval_start:]:
+                bid_utility = self._profile.getProfile().getUtility(bid)
+                max_util = max(max_util, bid_utility)
+
+            # TODO: check that max_util > 0 ??
+            return self._profile.getProfile().getUtility(opponent_bid) >= max_util
+
+        return False
+
 
     def _findBid(self) -> Bid:
         # compose a list of all possible bids
@@ -199,7 +280,5 @@ class Ye(DefaultParty):
             if bid_util > best_util:
                 best_bid = bid
                 best_util = bid_util
-
-
 
         return best_bid
