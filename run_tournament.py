@@ -19,7 +19,7 @@ tournament_settings = {
         "agents.linear_agent.linear_agent.LinearAgent",
         "agents.random_agent.random_agent.RandomAgent",
         "agents.stupid_agent.stupid_agent.StupidAgent",
-        "agents.template_agent.template_agent.TemplateAgent",
+        "agents.Group34_NegotiationAssignment_Agent.Group34_NegotiationAssignment_Agent.Ye",
     ],
     "profile_sets": [
         ["domains/domain00/profileA.json", "domains/domain00/profileB.json"],

@@ -1,17 +1,12 @@
-import decimal
 import logging
 import math
 import sys
-from random import randint
-from typing import cast, List
-from typing import Callable
 from decimal import Decimal
-
+from typing import cast, List
 
 from geniusweb.actions.Accept import Accept
 from geniusweb.actions.Action import Action
 from geniusweb.actions.Offer import Offer
-from geniusweb.actions.PartyId import PartyId
 from geniusweb.bidspace.AllBidsList import AllBidsList
 from geniusweb.inform.ActionDone import ActionDone
 from geniusweb.inform.Finished import Finished
@@ -19,16 +14,13 @@ from geniusweb.inform.Inform import Inform
 from geniusweb.inform.Settings import Settings
 from geniusweb.inform.YourTurn import YourTurn
 from geniusweb.issuevalue.Bid import Bid
-from geniusweb.issuevalue.Domain import Domain
-from geniusweb.issuevalue.Value import Value
-from geniusweb.issuevalue.ValueSet import ValueSet
+from geniusweb.opponentmodel.FrequencyOpponentModel import FrequencyOpponentModel
 from geniusweb.party.Capabilities import Capabilities
 from geniusweb.party.DefaultParty import DefaultParty
-from geniusweb.profile.utilityspace.UtilitySpace import UtilitySpace
 from geniusweb.profileconnection.ProfileConnectionFactory import (
     ProfileConnectionFactory,
 )
-from geniusweb.progress.ProgressRounds import ProgressRounds
+from geniusweb.progress.Progress import Progress
 
 
 class Ye(DefaultParty):
@@ -38,15 +30,18 @@ class Ye(DefaultParty):
 
     def __init__(self):
         super().__init__()
+        self._progress = None
+        self._me = None
+        self._settings = None
         self.getReporter().log(logging.INFO, "party is initialized")
         self._profile = None
-        self._last_received_bid: Bid = None
+        self._last_received_bid = None
         self._best_util: int = -sys.maxsize - 1
-
         self._received_bids: List[Bid] = list()
-
-        self._e = 2
+        self._opponent_model = None
+        self._e = 0.3
         self._to_factor = 1
+        self.our_last_sent_bid = None
 
     def notifyChange(self, info: Inform):
         """This is the entry point of all interaction with your agent after is has been initialised.
@@ -62,29 +57,35 @@ class Ye(DefaultParty):
             self._me = self._settings.getID()
 
             # progress towards the deadline has to be tracked manually through the use of the Progress object
-            self._progress: ProgressRounds = self._settings.getProgress()
+            self._progress: Progress = self._settings.getProgress()
 
             # the profile contains the preferences of the agent over the domain
             self._profile = ProfileConnectionFactory.create(
                 info.getProfile().getURI(), self.getReporter()
             )
+
+            self._opponent_model = FrequencyOpponentModel.create().With(self._profile.getProfile().getDomain(),
+                                                                        newResBid=None)
+            # self._opponent_model.dom
+
         # ActionDone is an action sent by an opponent (an offer or an accept)
         elif isinstance(info, ActionDone):
-            action: Action = cast(ActionDone, info).getAction()
+            action: Action = info.getAction()
 
             # if it is an offer, set the last received bid
-            if isinstance(action, Offer):
-                self._last_received_bid = cast(Offer, action).getBid()
+            if isinstance(action, Offer) and action.getActor() is not self._me:
+                self._last_received_bid: Bid = action.getBid()
 
                 profile = self._profile.getProfile()
-
                 bid_util = profile.getUtility(self._last_received_bid)
-
                 if bid_util > self._best_util:
-                    self._best_util = bid_util
+                    self._best_util = float(bid_util)
 
                 # add bid to the received bids list
                 self._received_bids.append(self._last_received_bid)
+
+                # add bid to opponent model
+                self._opponent_model = self._opponent_model.WithAction(action, self._progress)
 
         # YourTurn notifies you that it is your turn to act
         elif isinstance(info, YourTurn):
@@ -94,7 +95,7 @@ class Ye(DefaultParty):
             # log that we advanced a turn
             self._progress = self._progress.advance()
 
-        # Finished will be send if the negotiation has ended (through agreement or deadline)
+        # Finished will be sent if the negotiation has ended (through agreement or deadline)
         elif isinstance(info, Finished):
             # terminate the agent MUST BE CALLED
             self.terminate()
@@ -107,8 +108,8 @@ class Ye(DefaultParty):
     # leave it as it is for this course
     def getCapabilities(self) -> Capabilities:
         return Capabilities(
-            set(["SAOP"]),
-            set(["geniusweb.profile.utilityspace.LinearAdditive"]),
+            {"SAOP"},
+            {"geniusweb.profile.utilityspace.LinearAdditive"},
         )
 
     # terminates the agent and its connections
@@ -140,11 +141,11 @@ class Ye(DefaultParty):
 
         profile = self._profile.getProfile()
 
-        return F * float(profile.getUtility(bid)) + (1 - F) * self.f5(bid) # for now f1
+        return F * float(profile.getUtility(bid)) + (1 - F) * self.f5(bid)  # for now f1
 
     def f5(self, bid: Bid) -> float:
         # opponent utility
-        return 0.5 # getOpponentUtility(bid)
+        return float(self._opponent_model.getUtility(bid))
 
     def f1(self, bid: Bid) -> float:
         # f1(ω) = 1 − |uˆo(ω) − uˆo (xlast)|
@@ -164,12 +165,9 @@ class Ye(DefaultParty):
 
     # execute a turn
     def _myTurn(self):
-        # TODO: opponent modelling
-
         # find a bid to propose as counter offer
         bid = self._findBid()
 
-        action = None
         # check if the last received offer if the opponent is good enough
         if self._isGood(self._last_received_bid, bid):
             # if so, accept the offer
@@ -178,6 +176,7 @@ class Ye(DefaultParty):
             # otherwise, offer the new bid
             action = Offer(self._me, bid)
 
+        self.our_last_sent_bid = bid
         # send the action
         self.getConnection().send(action)
 
@@ -189,36 +188,57 @@ class Ye(DefaultParty):
         :param agent_bid: the bid that the agent is considering to offer
         :return True iff agent should accept opponent's bid.
         """
-        # TODO: some shit where we accept the bid if its the last round only if its utility > reservation value
         if opponent_bid is None:
             return False
-        profile = self._profile.getProfile()
 
-        progress = self._progress.get(0)
-
-        # TODO: add comms
-        return self.ac_const(opponent_bid) or self.ac_next(opponent_bid, agent_bid) or self.ac_combi_avg(opponent_bid)
-
-        # very basic approach that accepts if the offer is valued above 0.6 and
-        # 80% of the rounds towards the deadline have passed
-        # return profile.getUtility(bid) > 0.6 and progress > 0.8
-
-        return False
+        reservation_bid = self._profile.getProfile().getReservationBid()
+        if reservation_bid is not None:
+            reservation_value = self._profile.getProfile().getUtility()
+        else:
+            reservation_value = 0
+        # if the received bid has utility greater than our reservation value
+        if self._profile.getProfile().getUtility(opponent_bid) > reservation_value:
+            # check acceptance conditions
+            # if any of them return True (bid is good) => return true
+            return self.ac_const(opponent_bid) or self.ac_next(opponent_bid, agent_bid) \
+                   or self.ac_max(opponent_bid)
+        else:
+            return False
 
     def ac_const(self, opponent_bid: Bid, alpha: Decimal = Decimal(0.88)) -> bool:
         """
-        TODO: add comms
+        Acceptance condition, constant utility value.
+
+        Method returns true if the passed bid has utility greater than alpha
+        :param opponent_bid
+        :param alpha: the utility for which we should accept the bid.
         """
         bid_utility = self._profile.getProfile().getUtility(opponent_bid)
         return bid_utility >= alpha
 
     def ac_next(self, opponent_bid: Bid, agent_bid: Bid) -> bool:
+        """
+        Acceptance condition, compares opponent's bid with the bid we are about to propose.
+
+        Method returns true if opponent's bid has greater utility than the provided (potential) bid
+        :param opponent_bid
+        :param agent_bid: the bid that the agent would offer next.
+        """
         profile = self._profile.getProfile()
         return profile.getUtility(opponent_bid) >= profile.getUtility(agent_bid)
 
-    def ac_combi_avg(self, opponent_bid: Bid, time: float = 0.98) -> bool:
+    def ac_avg(self, opponent_bid: Bid, time: float = 0.92) -> bool:
         """
-        TODO
+        Acceptance condition, compares opponent's bid with the average of previously offered bids.
+
+        Method returns true if, given that the current negotiation round happens after the time 'time',
+        the opponent's bid has greater utility than the average utility of (some of) the past offered bids.
+        As the negotiation round approaches it's end, the method considers a smaller set of previous bid.
+        ie: progress = 0.98 => calculate average of last 4 offered bids
+            progress = 0.99 => calculate average of last 2 offered bids
+            here, I assume the negotiation has duration of 200 rounds
+        :param opponent_bid
+        :param time: TODO
         """
         progress = self._progress.get(0)
         if progress >= time:
@@ -231,18 +251,27 @@ class Ye(DefaultParty):
 
             utility_sum = 0
             num_bids = 0
-            for bid in self._received_bids[interval_start: ]:
+            for bid in self._received_bids[interval_start:]:
                 utility_sum += self._profile.getProfile().getUtility(bid)
                 num_bids += 1
 
             avg = utility_sum / num_bids
-            return self._profile.getProfile().getUtility(opponent_bid)  >= avg
+            return self._profile.getProfile().getUtility(opponent_bid) >= avg
 
         return False
 
-    def ac_combi_max(self, opponent_bid: Bid, time: float) -> bool:
+    def ac_max(self, opponent_bid: Bid, time: float = 0.92) -> bool:
         """
-        TODO
+        Acceptance condition, compares opponent's bid with the best previously offered bid.
+
+        Method returns true if, given that the current negotiation round happens after the time 'time',
+        the opponent's bid has greater utility than the max utility of (some of) the past offered bids.
+        As the negotiation round approaches it's end, the method considers a smaller set of previous bid.
+        ie: progress = 0.98 => calculate average of last 4 offered bids
+            progress = 0.99 => calculate average of last 2 offered bids
+            here, I assume the negotiation has duration of 200 rounds
+        :param opponent_bid
+        :param time: TODO
         """
         progress = self._progress.get(0)
         if progress >= time:
@@ -263,13 +292,12 @@ class Ye(DefaultParty):
 
         return False
 
-
     def _findBid(self) -> Bid:
+        # TODO: go semi hardliner as negotiation approaches end ??
+        # TODO: figure out if opponent is hardlining => also be assholes
         # compose a list of all possible bids
         domain = self._profile.getProfile().getDomain()
         all_bids = AllBidsList(domain)
-
-        # profile = self._profile.getProfile().getReservationBid()
 
         best_util = -sys.maxsize - 1
         best_bid = None
