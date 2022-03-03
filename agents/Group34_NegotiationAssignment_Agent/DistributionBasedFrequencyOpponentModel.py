@@ -28,7 +28,7 @@ def get_issue_max_count(freqs: Dict[Value, int]) -> int:
 
 
 def update_rule(progress: float, alpha: float = 10, beta: float = 5):
-    return alpha * (1 - progress ** (1 / beta))
+    return alpha * (1 - progress ** beta)
 
 
 def get_issue_val(value: Value, freqs: Dict[Value, int]) -> float:
@@ -64,20 +64,22 @@ class DistributionBasedFrequencyOpponentModel(UtilitySpace, OpponentModel):
         4. weaker assumptions on the opponent's behaviour
     """
 
-    def __init__(self, domain: Optional[Domain],
+    def __init__(self, finished_first_window: bool,
+                 domain: Optional[Domain],
                  issue_weights: Dict[str, float],
                  prev_window: Dict[str, Dict[Value, int]],
                  current_window: Dict[str, Dict[Value, int]],
                  freqs: Dict[str, Dict[Value, int]],
                  cw_bids_count: int,
-                 resBid: Optional[Bid], window_size: int = -1, negotiation_rounds: int = 0, window_fraction: float = 0,
+                 resBid: Optional[Bid], window_size: int,
                  gamma: float = 0.25, alpha: float = 10, beta: float = 5):
         """
         TODO: add comms
         """
+        self._finished_first_window = finished_first_window
         self._domain = domain
         self._issue_weights = issue_weights
-        self._window_size = -1
+        self._window_size = window_size
         if domain is not None:
             # initialize weights
             if not issue_weights:  # check that the weights dict is empty
@@ -86,8 +88,8 @@ class DistributionBasedFrequencyOpponentModel(UtilitySpace, OpponentModel):
                 for issue in domain.getIssues():
                     issue_weights[issue] = 1 / num_issues
             # init window size
-            if negotiation_rounds != 0:
-                self._window_size = floor(negotiation_rounds * window_fraction)
+            # if negotiation_rounds != -1:
+            #     self._window_size = floor(negotiation_rounds * window_fraction)
 
         self._prev_window = prev_window
         self._current_window = current_window
@@ -100,21 +102,21 @@ class DistributionBasedFrequencyOpponentModel(UtilitySpace, OpponentModel):
         self._beta = beta
 
     @staticmethod
-    def create(negotiation_rounds: int, window_fraction: float, gamma: float = 0.25, alpha: float = 10, beta: float = 5) \
+    def create(window_size, gamma: float = 0.25, alpha: float = 10, beta: float = 5) \
             -> "DistributionBasedFrequencyOpponentModel":
         """
         TODO
         :param window_fraction:
         """
-        return DistributionBasedFrequencyOpponentModel(None, {}, {}, {}, {}, 0, None, 0,
-                                                       negotiation_rounds=negotiation_rounds,
-                                                       window_fraction=window_fraction,
+        return DistributionBasedFrequencyOpponentModel(False, None, {}, {}, {}, {}, 0, None,
+                                                       window_size,
                                                        gamma=gamma, alpha=alpha, beta=beta)
 
     def With(self, newDomain: Domain, newResBid: Optional[Bid]) -> "DistributionBasedFrequencyOpponentModel":
         if newDomain is None:
             raise ValueError("domain is not initialized")
-        return DistributionBasedFrequencyOpponentModel(newDomain,
+        return DistributionBasedFrequencyOpponentModel(self._finished_first_window,
+                                                       newDomain,
                                                        {},  # issue weights
                                                        {iss: {} for iss in newDomain.getIssues()},  # prev window
                                                        {iss: {} for iss in newDomain.getIssues()},  # curr window
@@ -184,10 +186,18 @@ class DistributionBasedFrequencyOpponentModel(UtilitySpace, OpponentModel):
 
         # check if current window is full
         if self._cw_bids_count == self._window_size:
+            if not self._finished_first_window:
+                return DistributionBasedFrequencyOpponentModel(True, self._domain, self._issue_weights, current_window,
+                                                               {iss: {} for iss in self._domain.getIssues()},
+                                                               new_freqs, 0, self._resBid,
+                                                               window_size=self._window_size, gamma=self._gamma,
+                                                               alpha=self._alpha,
+                                                               beta=self._beta)
             # update weights and windows
             e: List[str] = list()
             concession = False
 
+            new_weights = self._issue_weights.copy()
             for issue in self._domain.getIssues():
                 prev_window_freqs = self._get_freq(self._prev_window[issue], issue)
                 curr_window_freqs = self._get_freq(self._current_window[issue], issue)
@@ -212,13 +222,15 @@ class DistributionBasedFrequencyOpponentModel(UtilitySpace, OpponentModel):
                     if curr_window_utility < prev_window_utility:
                         concession = True
             if len(e) != len(self._domain.getIssues()) and concession:
-                for issue in self._domain.getIssues():
+                for issue in e:
                     # update weights whose value distribution did not change over consecutive windows
                     # value distribution did not change => issue has greater weight
-                    self._issue_weights[issue] += update_rule(progress.get(0), alpha=self._alpha, beta=self._beta)
+                    # self._issue_weights[issue] += update_rule(progress.get(0), alpha=self._alpha, beta=self._beta)
+                    new_weights[issue] = self._issue_weights[issue] + \
+                                         update_rule(progress.get(0), alpha=self._alpha, beta=self._beta)
 
             # update current and previous window
-            return DistributionBasedFrequencyOpponentModel(self._domain, self._issue_weights, current_window,
+            return DistributionBasedFrequencyOpponentModel(self._finished_first_window, self._domain, new_weights, current_window,
                                                            {iss: {} for iss in self._domain.getIssues()},
                                                            new_freqs, 0, self._resBid,
                                                            window_size=self._window_size, gamma=self._gamma,
@@ -226,7 +238,7 @@ class DistributionBasedFrequencyOpponentModel(UtilitySpace, OpponentModel):
                                                            beta=self._beta)
 
         else:
-            return DistributionBasedFrequencyOpponentModel(self._domain, self._issue_weights, self._prev_window,
+            return DistributionBasedFrequencyOpponentModel(self._finished_first_window, self._domain, self._issue_weights, self._prev_window,
                                                            current_window, new_freqs, self._cw_bids_count + 1,
                                                            self._resBid, self._window_size, gamma=self._gamma,
                                                            alpha=self._alpha, beta=self._beta)
@@ -257,8 +269,9 @@ class DistributionBasedFrequencyOpponentModel(UtilitySpace, OpponentModel):
             res.append((1 + count) / (num_values + self._window_size))
 
         # normalize list
-        norm = [i / sum(res) for i in res]
-        return norm
+        return res
+        # norm = [i / sum(res) for i in res]
+        # return norm
 
     def _get_valuation(self, freqs: Dict[Value, int], issue: str, gamma: float = 0.25) -> List[float]:
         """

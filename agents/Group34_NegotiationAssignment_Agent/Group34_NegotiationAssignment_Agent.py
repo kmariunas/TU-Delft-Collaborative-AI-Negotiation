@@ -44,7 +44,7 @@ class Ye(DefaultParty):
         self._e = 0.00105
         self._to_factor = 0.961
         self.our_last_sent_bid = None
-        self._window_fraction = 0.05
+        self._window_size = 2
 
     def notifyChange(self, info: Inform):
         """This is the entry point of all interaction with your agent after is has been initialised.
@@ -68,7 +68,7 @@ class Ye(DefaultParty):
             )
 
             self._opponent_model = DistributionBasedFrequencyOpponentModel\
-                .create(self._progress.getDuration(), self._window_fraction)\
+                .create(self._window_size)\
                 .With(self._profile.getProfile().getDomain(), newResBid=None)
             # self._opponent_model.dom
 
