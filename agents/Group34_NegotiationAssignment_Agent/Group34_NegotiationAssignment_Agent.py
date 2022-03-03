@@ -14,13 +14,15 @@ from geniusweb.inform.Inform import Inform
 from geniusweb.inform.Settings import Settings
 from geniusweb.inform.YourTurn import YourTurn
 from geniusweb.issuevalue.Bid import Bid
-from geniusweb.opponentmodel.FrequencyOpponentModel import FrequencyOpponentModel
 from geniusweb.party.Capabilities import Capabilities
 from geniusweb.party.DefaultParty import DefaultParty
 from geniusweb.profileconnection.ProfileConnectionFactory import (
     ProfileConnectionFactory,
 )
 from geniusweb.progress.Progress import Progress
+
+from agents.Group34_NegotiationAssignment_Agent.DistributionBasedFrequencyOpponentModel import \
+    DistributionBasedFrequencyOpponentModel
 
 
 class Ye(DefaultParty):
@@ -39,9 +41,10 @@ class Ye(DefaultParty):
         self._best_util: int = -sys.maxsize - 1
         self._received_bids: List[Bid] = list()
         self._opponent_model = None
-        self._e = 0.3
-        self._to_factor = 1
+        self._e = 0.00105
+        self._to_factor = 0.961
         self.our_last_sent_bid = None
+        self._window_fraction = 0.05
 
     def notifyChange(self, info: Inform):
         """This is the entry point of all interaction with your agent after is has been initialised.
@@ -50,7 +53,7 @@ class Ye(DefaultParty):
             info (Inform): Contains either a request for action or information.
         """
 
-        # a Settings message is the first message that will be send to your
+        # a Settings message is the first message that will be sent to your
         # agent containing all the information about the negotiation session.
         if isinstance(info, Settings):
             self._settings: Settings = cast(Settings, info)
@@ -64,8 +67,9 @@ class Ye(DefaultParty):
                 info.getProfile().getURI(), self.getReporter()
             )
 
-            self._opponent_model = FrequencyOpponentModel.create().With(self._profile.getProfile().getDomain(),
-                                                                        newResBid=None)
+            self._opponent_model = DistributionBasedFrequencyOpponentModel\
+                .create(self._progress.getDuration(), self._window_fraction)\
+                .With(self._profile.getProfile().getDomain(), newResBid=None)
             # self._opponent_model.dom
 
         # ActionDone is an action sent by an opponent (an offer or an accept)
@@ -98,6 +102,7 @@ class Ye(DefaultParty):
         # Finished will be sent if the negotiation has ended (through agreement or deadline)
         elif isinstance(info, Finished):
             # terminate the agent MUST BE CALLED
+            print(self._opponent_model.getIssueWeights())
             self.terminate()
         else:
             self.getReporter().log(
@@ -182,7 +187,7 @@ class Ye(DefaultParty):
 
     def _isGood(self, opponent_bid: Bid, agent_bid: Bid) -> bool:
         """
-        Method that checks if we would agree with an offer.
+        Method that checks if we would agree with an offer
 
         :param opponent_bid
         :param agent_bid: the bid that the agent is considering to offer
@@ -190,6 +195,8 @@ class Ye(DefaultParty):
         """
         if opponent_bid is None:
             return False
+
+        print(2*int(self._progress.get(0) * 200), " - ", self._opponent_model.getUtility(opponent_bid))
 
         reservation_bid = self._profile.getProfile().getReservationBid()
         if reservation_bid is not None:
@@ -216,7 +223,7 @@ class Ye(DefaultParty):
         bid_utility = self._profile.getProfile().getUtility(opponent_bid)
         return bid_utility >= alpha
 
-    def ac_next(self, opponent_bid: Bid, agent_bid: Bid) -> bool:
+    def ac_next(self, opponent_bid: Bid, agent_bid: Bid, alpha: float = 1.015, beta: float = 0.017) -> bool:
         """
         Acceptance condition, compares opponent's bid with the bid we are about to propose.
 
@@ -225,9 +232,9 @@ class Ye(DefaultParty):
         :param agent_bid: the bid that the agent would offer next.
         """
         profile = self._profile.getProfile()
-        return profile.getUtility(opponent_bid) >= profile.getUtility(agent_bid)
+        return float(profile.getUtility(opponent_bid)) >= alpha * float(profile.getUtility(agent_bid)) + beta
 
-    def ac_avg(self, opponent_bid: Bid, time: float = 0.92) -> bool:
+    def ac_avg(self, opponent_bid: Bid, time: float = 0.925) -> bool:
         """
         Acceptance condition, compares opponent's bid with the average of previously offered bids.
 
