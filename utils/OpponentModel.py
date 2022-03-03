@@ -34,19 +34,27 @@ from geniusweb.profileconnection.ProfileConnectionFactory import (
     ProfileConnectionFactory,
 )
 from geniusweb.progress.ProgressRounds import ProgressRounds
+from geniusweb.opponentmodel.FrequencyOpponentModel import FrequencyOpponentModel
+
 import numpy as np
 class OpponentModel:
 
-
+#todo gotta do some clean up now! try and merge OpponentModelImproved and this class
 
 
     def __init__(self):
         self._issueWeights = None
+
         self._biddingHistory = []
         self._issues = None
         self._concessionRatioToWeight = 1 - np.arange(100)/100
         self._roundNumber = 1
         self._concessionRatioDistributions = None
+
+
+        self._profile = None
+
+        self._frequencyModel = None
     def setIssueWeights(self, issuesTotal):
         self._issueWeights = np.ones(issuesTotal)
 
@@ -63,7 +71,7 @@ class OpponentModel:
         sum = 0
         issueValues = potentialBid.getIssueValues()
         for counter,issue in enumerate(self._issues):
-            sum += self._issueWeights[counter] * issueValues[issue]
+            sum += self._issueWeights[counter] * self._frequencyModel._getFraction(issue, self._frequencyModel.val(issueValues[issue]))
         return sum
 
     roundNumber = 0
@@ -82,7 +90,7 @@ class OpponentModel:
 
 
         for counter,issue in enumerate(self._issues):
-            difference = previousBidValues[issue] - currentBidBidValues[issue]
+            difference = self._frequencyModel._getFraction(issue, self._frequencyModel.val(previousBidValues[issue]))  - currentBidBidValues[issue]
             concessionRatios[counter] = difference
 
         self._concessionRatioDistributions.append(concessionRatios)
@@ -126,6 +134,7 @@ class OpponentModel:
             self._profile = ProfileConnectionFactory.create(
                 info.getProfile().getURI(), self.getReporter()
             )
+            self._frequencyModel = FrequencyOpponentModel.create().With(self._profile.getProfile().getDomain(), newResBid=None)
 
         # ActionDone is an action send by an opponent (an offer or an accept)
         elif isinstance(info, ActionDone):
@@ -136,6 +145,7 @@ class OpponentModel:
                 bid = cast(Offer, action).getBid()
                 #updates bidding history and weights
                 self.updateBiddingHistory(bid)
+
 
 
 
