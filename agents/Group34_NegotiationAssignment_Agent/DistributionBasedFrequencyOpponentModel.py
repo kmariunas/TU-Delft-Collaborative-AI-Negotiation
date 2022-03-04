@@ -1,4 +1,5 @@
 from decimal import Decimal
+from math import isclose
 from typing import Optional, Dict, List
 
 from geniusweb.actions.Action import Action
@@ -57,7 +58,7 @@ def chi2_squared_test(observed: List[float], expected: List[float]) -> float:
     """
     sum1 = sum(observed)
     sum2 = sum(expected)
-    if sum1 != sum2 or len(observed) != len(expected):
+    if not isclose(sum1, sum2, rel_tol=1e-05) or len(observed) != len(expected):
         raise ValueError("Lists should have the same length and sum of elements")
     x2 = 0      # chi squared test
     for i in range(0, len(observed)):
@@ -250,6 +251,7 @@ class DistributionBasedFrequencyOpponentModel(UtilitySpace, OpponentModel):
                 weights_sum = sum(self._issue_weights.values())
                 for k, v in new_weights.items():
                     new_weights[k] = v / weights_sum
+                print("updated weights")
                 self._issue_weights = new_weights
 
             # update current and previous window
