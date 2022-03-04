@@ -43,10 +43,11 @@ class Ye(DefaultParty):
         self._best_util: int = -sys.maxsize - 1
         self._received_bids: List[Bid] = list()
         self._opponent_model = None
-        self._e = 0.00105
-        self._to_factor = 0.961
+        self._e = 1
+        self._to_factor = 0.7
         self.our_last_sent_bid = None
         self._window_fraction = 0.05
+        self._max_concession = 0.4
 
     def notifyChange(self, info: Inform):
         """This is the entry point of all interaction with your agent after is has been initialised.
@@ -150,7 +151,7 @@ class Ye(DefaultParty):
 
         profile = self._profile.getProfile()
 
-        return F * float(profile.getUtility(bid)) + (1 - F) * self.f5(bid)  # for now f1
+        return F * float(profile.getUtility(bid)) + (1 - F) * self.f5(bid)
 
     def f5(self, bid: Bid) -> float:
         # opponent utility
@@ -320,7 +321,7 @@ class Ye(DefaultParty):
         else:
             max_util = float(self._profile.getProfile().getUtility(self.our_last_sent_bid))
 
-        all_bids = self._bids_space.getBids(Interval(Decimal(max_util - 0.5), Decimal(max_util + 0.04)))
+        all_bids = self._bids_space.getBids(Interval(Decimal(max_util - self._max_concession), Decimal(max_util + 0.01)))
 
         best_util = -sys.maxsize - 1
         best_bid = None
