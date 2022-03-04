@@ -1,8 +1,10 @@
+import json
 import logging
 import math
 import sys
+from os import path
 from decimal import Decimal
-from typing import cast, List
+from typing import cast, List, Dict
 
 from geniusweb.bidspace.Interval import Interval
 from geniusweb.actions.Accept import Accept
@@ -42,21 +44,49 @@ class Ye(DefaultParty):
         self._last_received_bid = None
         self._best_util: int = -sys.maxsize - 1
         self._received_bids: List[Bid] = list()
-        self._opponent_model = None
-        self._e = 1
+        self._opponent_model: DistributionBasedFrequencyOpponentModel = None
+        self._e = 0.2
         self._to_factor = 0.7
         self.our_last_sent_bid = None
-        self._window_size = 5
+        self._window_size = 2
         self._max_concession = 0.4
 
-        # create text file in utils
+
+        basepath = path.dirname(__file__)
+
+        self._file_name = path.abspath(path.join(basepath, "..", "..", "results/received-bids-utilities.json"))
+        self._received_bids_utilities: List[float] = []
+
+
+        self.opponent_file_name = path.abspath(path.join(basepath, "..", "..", "results/opponent-weights.json"))
+        self.opponent_weights: List[Dict[str, float]] = []
+        # # create text file in results
+        # filepath =
+        #
+        # # create file for writing
         # created = False
+        # version = 0
         # while not created:
-        #     version = 0
         #     try:
-        #         file_name = "../../results/modellingData" + str(version) + ".txt"
-        #         f = open(file_name, "x")
-            # catch
+        #         self._file_name = filepath + str(version) + ".txt"
+        #         print(self._file_name)
+        #         open(self._file_name, "x")
+        #         created = True
+        #     except Exception as e:
+        #         # print(e)
+        #         version += 1
+        #
+        # # created = False
+        # # version = 0
+        # # try:
+        # #     self._file_name = filepath + str(version) + ".txt"
+        # #     print(self._file_name)
+        # #     open(self._file_name, "x")
+        # #     created = True
+        # # except Exception as e:
+        # #     # print(e)
+        # #     version += 1
+
 
     def notifyChange(self, info: Inform):
         """This is the entry point of all interaction with your agent after is has been initialised.
@@ -117,7 +147,11 @@ class Ye(DefaultParty):
         # Finished will be sent if the negotiation has ended (through agreement or deadline)
         elif isinstance(info, Finished):
             # terminate the agent MUST BE CALLED
-            print(self._opponent_model.getIssueWeights())
+            # print(self._opponent_model.getIssueWeights())
+
+            self.write_weights()
+            self.write_utilities()
+
             self.terminate()
         else:
             self.getReporter().log(
@@ -211,7 +245,7 @@ class Ye(DefaultParty):
         if opponent_bid is None:
             return False
 
-        print(2*int(self._progress.get(0) * 200), " - ", self._opponent_model.getUtility(opponent_bid))
+        # print(2*int(self._progress.get(0) * 200), " - ", self._opponent_model.getUtility(opponent_bid))
 
         reservation_bid = self._profile.getProfile().getReservationBid()
         if reservation_bid is not None:
@@ -324,6 +358,12 @@ class Ye(DefaultParty):
         domain = self._profile.getProfile().getDomain()
         # all_bids = AllBidsList(domain)
 
+
+#############3
+        self._received_bids_utilities.append(float(self._opponent_model.getUtility(self._last_received_bid)))
+        self.opponent_weights.append(self._opponent_model.getIssueWeights())
+#############
+
         if self.our_last_sent_bid is None:
             max_util = 1.0
         else:
@@ -342,3 +382,14 @@ class Ye(DefaultParty):
                 best_util = bid_util
 
         return best_bid
+
+    def write_utilities(self):
+        json_string = json.dumps(self._received_bids_utilities)
+        with open(self._file_name, 'w') as outfile:
+            json.dump(json_string, outfile)
+
+    def write_weights(self):
+        # weights = {"weights": self.opponent_weights}
+        json_string = json.dumps(self.opponent_weights)
+        with open(self.opponent_file_name, 'w') as outfile:
+            json.dump(json_string, outfile)

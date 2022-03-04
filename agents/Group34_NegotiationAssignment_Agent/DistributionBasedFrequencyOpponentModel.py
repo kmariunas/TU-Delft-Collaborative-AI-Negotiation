@@ -70,12 +70,11 @@ def chi2_squared_test(observed: List[float], expected: List[float]) -> float:
     sum2 = sum(expected)
     if not isclose(sum1, sum2, rel_tol=1e-05) or len(observed) != len(expected):
         raise ValueError("Lists should have the same length and sum of elements")
-    x2 = 0      # chi squared test
+    x2 = 0  # chi squared test
     for i in range(0, len(observed)):
         x2 += ((observed[i] - expected[i]) ** 2) / (expected[i] ** 2)
         # divide by expected value squared because passed arguments have < 1 values
     return x2
-
 
 
 class DistributionBasedFrequencyOpponentModel(UtilitySpace, OpponentModel):
@@ -98,7 +97,8 @@ class DistributionBasedFrequencyOpponentModel(UtilitySpace, OpponentModel):
         4. weaker assumptions on the opponent's behaviour
     """
 
-    def __init__(self, finished_first_window: bool,
+    def __init__(self,
+                 finished_first_window: bool,
                  domain: Optional[Domain],
                  issue_weights: Dict[str, float],
                  prev_window: Dict[str, Dict[Value, int]],
@@ -107,6 +107,7 @@ class DistributionBasedFrequencyOpponentModel(UtilitySpace, OpponentModel):
                  cw_bids_count: int,
                  resBid: Optional[Bid], window_size: int,
                  gamma: float = 0.25, alpha: float = 0.1, beta: float = 5):
+
         """
         :param finished_first_window: whether negotiation has finished the first window of rounds
         :param domain
@@ -133,6 +134,7 @@ class DistributionBasedFrequencyOpponentModel(UtilitySpace, OpponentModel):
                 # all issues have equal weight
                 for issue in domain.getIssues():
                     issue_weights[issue] = 1 / num_issues
+                # TODO: change this if you wanna change alpha
                 self._alpha = 1 / num_issues
             # init window size
             # if negotiation_rounds != -1:
@@ -233,7 +235,7 @@ class DistributionBasedFrequencyOpponentModel(UtilitySpace, OpponentModel):
                 # use p_value of Chi Square test to determine if the distribution of issue values for 'issue' has
                 # changed from the previous window of offers to the current one
                 x2 = chi2_squared_test(prev_window_freqs, curr_window_freqs)
-                p_val = chi2.sf(x2, 1)      # one degree of freedom
+                p_val = chi2.sf(x2, 1)  # one degree of freedom
 
                 # null hypothesis cannot be rejected
                 # aka: opponent has not changed their behaviour
@@ -262,7 +264,6 @@ class DistributionBasedFrequencyOpponentModel(UtilitySpace, OpponentModel):
                 weights_sum = sum(self._issue_weights.values())
                 for k, v in new_weights.items():
                     new_weights[k] = v / weights_sum
-                print("updated weights")
                 self._issue_weights = new_weights
 
             # update current and previous window
