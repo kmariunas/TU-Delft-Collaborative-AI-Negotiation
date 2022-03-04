@@ -4,10 +4,12 @@ import sys
 from decimal import Decimal
 from typing import cast, List
 
+from geniusweb.bidspace.Interval import Interval
 from geniusweb.actions.Accept import Accept
 from geniusweb.actions.Action import Action
 from geniusweb.actions.Offer import Offer
 from geniusweb.bidspace.AllBidsList import AllBidsList
+from geniusweb.bidspace.BidsWithUtility import BidsWithUtility
 from geniusweb.inform.ActionDone import ActionDone
 from geniusweb.inform.Finished import Finished
 from geniusweb.inform.Inform import Inform
@@ -41,10 +43,20 @@ class Ye(DefaultParty):
         self._best_util: int = -sys.maxsize - 1
         self._received_bids: List[Bid] = list()
         self._opponent_model = None
-        self._e = 0.00105
-        self._to_factor = 0.961
+        self._e = 1
+        self._to_factor = 0.7
         self.our_last_sent_bid = None
-        self._window_size = 2
+        self._window_size = 5
+        self._max_concession = 0.4
+
+        # create text file in utils
+        # created = False
+        # while not created:
+        #     version = 0
+        #     try:
+        #         file_name = "../../results/modellingData" + str(version) + ".txt"
+        #         f = open(file_name, "x")
+            # catch
 
     def notifyChange(self, info: Inform):
         """This is the entry point of all interaction with your agent after is has been initialised.
@@ -72,9 +84,12 @@ class Ye(DefaultParty):
                 .With(self._profile.getProfile().getDomain(), newResBid=None)
             # self._opponent_model.dom
 
+            self._bids_space = BidsWithUtility.create(self._profile.getProfile(), 6)
+
         # ActionDone is an action sent by an opponent (an offer or an accept)
         elif isinstance(info, ActionDone):
             action: Action = info.getAction()
+
 
             # if it is an offer, set the last received bid
             if isinstance(action, Offer) and action.getActor() is not self._me:
@@ -146,7 +161,7 @@ class Ye(DefaultParty):
 
         profile = self._profile.getProfile()
 
-        return F * float(profile.getUtility(bid)) + (1 - F) * self.f5(bid)  # for now f1
+        return F * float(profile.getUtility(bid)) + (1 - F) * self.f5(bid)
 
     def f5(self, bid: Bid) -> float:
         # opponent utility
@@ -221,6 +236,7 @@ class Ye(DefaultParty):
         :param alpha: the utility for which we should accept the bid.
         """
         bid_utility = self._profile.getProfile().getUtility(opponent_bid)
+
         return bid_utility >= alpha
 
     def ac_next(self, opponent_bid: Bid, agent_bid: Bid, alpha: float = 1.015, beta: float = 0.017) -> bool:
@@ -263,6 +279,7 @@ class Ye(DefaultParty):
                 num_bids += 1
 
             avg = utility_sum / num_bids
+
             return self._profile.getProfile().getUtility(opponent_bid) >= avg
 
         return False
@@ -295,7 +312,8 @@ class Ye(DefaultParty):
                 max_util = max(max_util, bid_utility)
 
             # TODO: check that max_util > 0 ??
-            return self._profile.getProfile().getUtility(opponent_bid) >= max_util
+
+            return self._profile.getProfile().getUtility(opponent_bid) > max_util
 
         return False
 
@@ -304,7 +322,14 @@ class Ye(DefaultParty):
         # TODO: figure out if opponent is hardlining => also be assholes
         # compose a list of all possible bids
         domain = self._profile.getProfile().getDomain()
-        all_bids = AllBidsList(domain)
+        # all_bids = AllBidsList(domain)
+
+        if self.our_last_sent_bid is None:
+            max_util = 1.0
+        else:
+            max_util = float(self._profile.getProfile().getUtility(self.our_last_sent_bid))
+
+        all_bids = self._bids_space.getBids(Interval(Decimal(max_util - self._max_concession), Decimal(max_util + 0.01)))
 
         best_util = -sys.maxsize - 1
         best_bid = None

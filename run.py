@@ -2,6 +2,7 @@ import json
 import os
 
 from utils.plot_trace import plot_trace
+from utils.plot_utilities import plot_utils
 from utils.runners import run_session
 
 # create results directory if it does not exist
@@ -23,6 +24,13 @@ settings = {
 
 # run a session and obtain results in dictionaries
 results_trace, results_summary = run_session(settings)
+
+#######
+print(results_trace)
+# plot_utils(results_trace,
+#            "agents_Group34_NegotiationAssignment_Agent_Group34_NegotiationAssignment_Agent_Ye_2",
+#            "agents_boulware_agent_boulware_agent_BoulwareAgent_1", "results/utils.html")
+######
 
 # plot trace to html file
 plot_trace(results_trace, "results/trace_plot.html")

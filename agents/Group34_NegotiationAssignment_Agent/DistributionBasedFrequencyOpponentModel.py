@@ -7,12 +7,22 @@ from geniusweb.actions.Offer import Offer
 from geniusweb.issuevalue.Bid import Bid
 from geniusweb.issuevalue.Domain import Domain
 from geniusweb.issuevalue.Value import Value
+from math import floor
+from decimal import Decimal
+from typing import Optional, Dict, List
+
+from geniusweb.actions.Offer import Offer
+from geniusweb.actions.Action import Action
+from geniusweb.issuevalue.Value import Value
+from geniusweb.issuevalue.Bid import Bid
+from geniusweb.issuevalue.Domain import Domain
 from geniusweb.opponentmodel.OpponentModel import OpponentModel
 from geniusweb.profile.utilityspace.UtilitySpace import UtilitySpace
 from geniusweb.progress.Progress import Progress
 from geniusweb.references.Parameters import Parameters
 from geniusweb.utils import val, HASH, toStr
 from scipy.stats import chi2
+from scipy.stats import chisquare
 
 
 def get_issue_max_count(freqs: Dict[Value, int]) -> int:
@@ -67,6 +77,7 @@ def chi2_squared_test(observed: List[float], expected: List[float]) -> float:
     return x2
 
 
+
 class DistributionBasedFrequencyOpponentModel(UtilitySpace, OpponentModel):
     _DECIMALS = 4
 
@@ -114,6 +125,7 @@ class DistributionBasedFrequencyOpponentModel(UtilitySpace, OpponentModel):
         self._domain = domain
         self._issue_weights = issue_weights
         self._window_size = window_size
+
         if domain is not None:
             # initialize weights
             if not issue_weights:  # check that the weights dict is empty
@@ -174,7 +186,6 @@ class DistributionBasedFrequencyOpponentModel(UtilitySpace, OpponentModel):
                 value = val(bid.getValue(issue))
 
                 utility += get_value_val(value, self._bidFrequencies[issue]) * self._issue_weights.get(issue)
-
         return Decimal(round(utility, DistributionBasedFrequencyOpponentModel._DECIMALS))
 
     def getIssueWeights(self) -> Dict[str, float]:
