@@ -1,23 +1,24 @@
-from math import floor
 from decimal import Decimal
 from typing import Optional, Dict, List
 
-from geniusweb.actions.Offer import Offer
 from geniusweb.actions.Action import Action
-from geniusweb.issuevalue.Value import Value
+from geniusweb.actions.Offer import Offer
 from geniusweb.issuevalue.Bid import Bid
 from geniusweb.issuevalue.Domain import Domain
+from geniusweb.issuevalue.Value import Value
 from geniusweb.opponentmodel.OpponentModel import OpponentModel
 from geniusweb.profile.utilityspace.UtilitySpace import UtilitySpace
 from geniusweb.progress.Progress import Progress
 from geniusweb.references.Parameters import Parameters
 from geniusweb.utils import val, HASH, toStr
-from scipy.stats import chisquare
+from scipy.stats import chi2
 
 
 def get_issue_max_count(freqs: Dict[Value, int]) -> int:
     """
-    TODO
+    Method returns the maximum (Laplacian smoothed) number of occurrences of an issue value
+
+    :param freqs: dictionary with value as key and number of occurrences as values.
     """
     # find max number of occurrences of an issue value
     max_count = 0
@@ -27,13 +28,16 @@ def get_issue_max_count(freqs: Dict[Value, int]) -> int:
     return max_count + 1  # Laplace smoothing
 
 
-def update_rule(progress: float, alpha: float = 10, beta: float = 5):
+def update_rule(progress: float, alpha: float = 0.1, beta: float = 5):
     return alpha * (1 - progress ** beta)
 
 
-def get_issue_val(value: Value, freqs: Dict[Value, int]) -> float:
+def get_value_val(value: Value, freqs: Dict[Value, int]) -> float:
     """
-    TODO
+    Method returns the estimated value of an issue value using a (Laplacian smoothed) frequency count
+
+    :param value: issue Value that needs to be estimated
+    :param freqs: dictionary with value as key and number of occurrences as values.
     """
     # find max number of occurrences of an issue value
     max_count = get_issue_max_count(freqs)
@@ -44,11 +48,29 @@ def get_issue_val(value: Value, freqs: Dict[Value, int]) -> float:
     return (count + 1) / max_count  # Laplace smoothing
 
 
+def chi2_squared_test(observed: List[float], expected: List[float]) -> float:
+    """
+    Method returns the chi squared test for two probability distributions
+
+    :param observed: observed frequency
+    :param expected: expected frequency
+    """
+    sum1 = sum(observed)
+    sum2 = sum(expected)
+    if sum1 != sum2 or len(observed) != len(expected):
+        raise ValueError("Lists should have the same length and sum of elements")
+    x2 = 0      # chi squared test
+    for i in range(0, len(observed)):
+        x2 += ((observed[i] - expected[i]) ** 2) / (expected[i] ** 2)
+        # divide by expected value squared because passed arguments have < 1 values
+    return x2
+
+
 class DistributionBasedFrequencyOpponentModel(UtilitySpace, OpponentModel):
     _DECIMALS = 4
 
     """
-    Opponent modelling algorithm as implemented in:
+    Opponent modelling implemented based on:
 
     Tunalı O., Aydoğan R., Sanchez-Anguix V. (2017) Rethinking Frequency Opponent Modeling in Automated Negotiation.
     In: An B., Bazzan A., Leite J., Villata S., van der Torre L. (eds) PRIMA 2017:
@@ -72,9 +94,20 @@ class DistributionBasedFrequencyOpponentModel(UtilitySpace, OpponentModel):
                  freqs: Dict[str, Dict[Value, int]],
                  cw_bids_count: int,
                  resBid: Optional[Bid], window_size: int,
-                 gamma: float = 0.25, alpha: float = 10, beta: float = 5):
+                 gamma: float = 0.25, alpha: float = 0.1, beta: float = 5):
         """
-        TODO: add comms
+        :param finished_first_window: whether negotiation has finished the first window of rounds
+        :param domain
+        :param issue_weights: weights of issues
+        :param prev_window: dictionary that counts the frequencies of each value per issue in previous round
+        :param current_window
+        :param freqs: dictionary that counts the frequencies of each value per issue since start of negotiation
+        :param cw_bids_count: current window bids count
+        :param resBid: reservation bid
+        :param window_size: window size, should be in (1, negotiation duration)
+        :param gamma: value used for calculating the issue value valuation
+        :param alpha: value used for updating weights
+        :param beta: controls the decay in updating weights
         """
         self._finished_first_window = finished_first_window
         self._domain = domain
@@ -87,6 +120,7 @@ class DistributionBasedFrequencyOpponentModel(UtilitySpace, OpponentModel):
                 # all issues have equal weight
                 for issue in domain.getIssues():
                     issue_weights[issue] = 1 / num_issues
+                self._alpha = 1 / num_issues
             # init window size
             # if negotiation_rounds != -1:
             #     self._window_size = floor(negotiation_rounds * window_fraction)
@@ -102,11 +136,15 @@ class DistributionBasedFrequencyOpponentModel(UtilitySpace, OpponentModel):
         self._beta = beta
 
     @staticmethod
-    def create(window_size, gamma: float = 0.25, alpha: float = 10, beta: float = 5) \
+    def create(window_size, gamma: float = 0.25, alpha: float = 0.1, beta: float = 5) \
             -> "DistributionBasedFrequencyOpponentModel":
         """
-        TODO
-        :param window_fraction:
+        Method creates a DistributionBasedFrequencyOpponentModel with the passed params.
+
+        :param window_size: size of window
+        :param gamma: value used for calculating the issue value valuation
+        :param alpha: value used for updating weights
+        :param beta: controls the decay in updating weights
         """
         return DistributionBasedFrequencyOpponentModel(False, None, {}, {}, {}, {}, 0, None,
                                                        window_size,
@@ -125,7 +163,6 @@ class DistributionBasedFrequencyOpponentModel(UtilitySpace, OpponentModel):
                                                        newResBid, self._window_size, gamma=self._gamma,
                                                        alpha=self._alpha, beta=self._beta)
 
-    # TODO
     def getUtility(self, bid: Bid) -> Decimal:
         if self._domain is None:
             raise ValueError("domain is not initialized")
@@ -135,7 +172,7 @@ class DistributionBasedFrequencyOpponentModel(UtilitySpace, OpponentModel):
             if issue in bid.getIssues():
                 value = val(bid.getValue(issue))
 
-                utility += get_issue_val(value, self._bidFrequencies[issue]) * self._issue_weights.get(issue)
+                utility += get_value_val(value, self._bidFrequencies[issue]) * self._issue_weights.get(issue)
 
         return Decimal(round(utility, DistributionBasedFrequencyOpponentModel._DECIMALS))
 
@@ -162,6 +199,81 @@ class DistributionBasedFrequencyOpponentModel(UtilitySpace, OpponentModel):
             return self
 
         bid: Bid = action.getBid()
+        current_window, new_freqs = self._add_bid(bid)
+
+        # check if current window is full
+        if self._cw_bids_count == self._window_size:
+            if not self._finished_first_window:
+                return DistributionBasedFrequencyOpponentModel(True, self._domain, self._issue_weights, current_window,
+                                                               {iss: {} for iss in self._domain.getIssues()},
+                                                               new_freqs, 0, self._resBid,
+                                                               window_size=self._window_size, gamma=self._gamma,
+                                                               alpha=self._alpha,
+                                                               beta=self._beta)
+            # update weights and windows
+            e: List[str] = list()
+            concession = False
+
+            for issue in self._domain.getIssues():
+                prev_window_freqs = self._get_freq(self._prev_window[issue], issue)
+                curr_window_freqs = self._get_freq(current_window[issue], issue)
+
+                # use p_value of Chi Square test to determine if the distribution of issue values for 'issue' has
+                # changed from the previous window of offers to the current one
+                x2 = chi2_squared_test(prev_window_freqs, curr_window_freqs)
+                p_val = chi2.sf(x2, 1)      # one degree of freedom
+
+                # null hypothesis cannot be rejected
+                # aka: opponent has not changed their behaviour
+                if p_val > 0.05:
+                    e.append(issue)
+                else:
+                    # null hypothesis is rejected
+                    # check if opponent has conceded in the issue
+                    valuation = self._get_valuation(self._bidFrequencies[issue], issue, gamma=self._gamma)
+                    prev_window_utility = sum([x * y for x, y in zip(prev_window_freqs, valuation)])  # dot product
+                    curr_window_utility = sum([x * y for x, y in zip(curr_window_freqs, valuation)])
+
+                    # opponent has conceded
+                    if curr_window_utility < prev_window_utility:
+                        concession = True
+            # update weights
+            if len(e) != len(self._domain.getIssues()) and concession:
+                for issue in e:
+                    # update weights whose value distribution did not change over consecutive windows
+                    # value distribution did not change => issue has greater weight
+                    self._issue_weights[issue] = self._issue_weights[issue] + update_rule(progress.get(0),
+                                                                                          alpha=self._alpha,
+                                                                                          beta=self._beta)
+                # normalize weights
+                new_weights = dict(self._issue_weights)
+                weights_sum = sum(self._issue_weights.values())
+                for k, v in new_weights.items():
+                    new_weights[k] = v / weights_sum
+                self._issue_weights = new_weights
+
+            # update current and previous window
+            return DistributionBasedFrequencyOpponentModel(self._finished_first_window, self._domain,
+                                                           self._issue_weights, current_window,
+                                                           {iss: {} for iss in self._domain.getIssues()},
+                                                           new_freqs, 0, self._resBid,
+                                                           window_size=self._window_size, gamma=self._gamma,
+                                                           alpha=self._alpha,
+                                                           beta=self._beta)
+
+        else:
+            return DistributionBasedFrequencyOpponentModel(self._finished_first_window, self._domain,
+                                                           self._issue_weights, self._prev_window,
+                                                           current_window, new_freqs, self._cw_bids_count,
+                                                           self._resBid, self._window_size, gamma=self._gamma,
+                                                           alpha=self._alpha, beta=self._beta)
+
+    def _add_bid(self, bid: Bid):
+        """
+        Method updates the counts for current window and global frequencies with the given bid
+        :param bid
+        """
+        self._cw_bids_count += 1
 
         # increase the counts for all the values in this bid
         current_window: Dict[str, Dict[Value, int]] = self.cloneMap(self._current_window)
@@ -183,65 +295,7 @@ class DistributionBasedFrequencyOpponentModel(UtilitySpace, OpponentModel):
                 if value in g_freqs:
                     g_old_count = g_freqs[value]
                 g_freqs[value] = g_old_count + 1
-
-        # check if current window is full
-        if self._cw_bids_count == self._window_size:
-            if not self._finished_first_window:
-                return DistributionBasedFrequencyOpponentModel(True, self._domain, self._issue_weights, current_window,
-                                                               {iss: {} for iss in self._domain.getIssues()},
-                                                               new_freqs, 0, self._resBid,
-                                                               window_size=self._window_size, gamma=self._gamma,
-                                                               alpha=self._alpha,
-                                                               beta=self._beta)
-            # update weights and windows
-            e: List[str] = list()
-            concession = False
-
-            new_weights = self._issue_weights.copy()
-            for issue in self._domain.getIssues():
-                prev_window_freqs = self._get_freq(self._prev_window[issue], issue)
-                curr_window_freqs = self._get_freq(self._current_window[issue], issue)
-
-                # use p_value of Chi Square test to determine if the distribution of issue values for 'issue' has
-                # changed from the previous window of offers to the current one
-                args = chisquare(curr_window_freqs, prev_window_freqs)
-                p_val: float = args[1]
-
-                # null hypothesis cannot be rejected
-                # aka: opponent has not changed their behaviour
-                if p_val > 0.05:
-                    e.append(issue)
-                else:
-                    # null hypothesis is rejected
-                    # check if opponent has conceded in the issue
-                    valuation = self._get_valuation(self._bidFrequencies[issue], issue, gamma=self._gamma)
-                    prev_window_utility = sum([x * y for x, y in zip(prev_window_freqs, valuation)])  # dot product
-                    curr_window_utility = sum([x * y for x, y in zip(curr_window_freqs, valuation)])
-
-                    # opponent has conceded
-                    if curr_window_utility < prev_window_utility:
-                        concession = True
-            if len(e) != len(self._domain.getIssues()) and concession:
-                for issue in e:
-                    # update weights whose value distribution did not change over consecutive windows
-                    # value distribution did not change => issue has greater weight
-                    # self._issue_weights[issue] += update_rule(progress.get(0), alpha=self._alpha, beta=self._beta)
-                    new_weights[issue] = self._issue_weights[issue] + \
-                                         update_rule(progress.get(0), alpha=self._alpha, beta=self._beta)
-
-            # update current and previous window
-            return DistributionBasedFrequencyOpponentModel(self._finished_first_window, self._domain, new_weights, current_window,
-                                                           {iss: {} for iss in self._domain.getIssues()},
-                                                           new_freqs, 0, self._resBid,
-                                                           window_size=self._window_size, gamma=self._gamma,
-                                                           alpha=self._alpha,
-                                                           beta=self._beta)
-
-        else:
-            return DistributionBasedFrequencyOpponentModel(self._finished_first_window, self._domain, self._issue_weights, self._prev_window,
-                                                           current_window, new_freqs, self._cw_bids_count + 1,
-                                                           self._resBid, self._window_size, gamma=self._gamma,
-                                                           alpha=self._alpha, beta=self._beta)
+        return current_window, new_freqs
 
     @staticmethod
     def cloneMap(freqs: Dict[str, Dict[Value, int]]) -> Dict[str, Dict[Value, int]]:
@@ -256,7 +310,9 @@ class DistributionBasedFrequencyOpponentModel(UtilitySpace, OpponentModel):
 
     def _get_freq(self, freqs: Dict[Value, int], issue: str) -> List[float]:
         """
-        TODO
+        Method returns a list of frequencies of all negotiation values of an issue for the passed window
+        :param freqs: window of rounds for which the frequencies should be calculated
+        :param issue
         """
         res: List[float] = list()
 
@@ -268,14 +324,15 @@ class DistributionBasedFrequencyOpponentModel(UtilitySpace, OpponentModel):
                 count = freqs.get(value)
             res.append((1 + count) / (num_values + self._window_size))
 
-        # normalize list
         return res
-        # norm = [i / sum(res) for i in res]
-        # return norm
 
     def _get_valuation(self, freqs: Dict[Value, int], issue: str, gamma: float = 0.25) -> List[float]:
         """
-        TODO
+        Method returns a list of approximated valutions of all negotiation values of an issue for the passed window.
+        :param freqs: window of rounds for which the frequencies should be calculated. Should be the global counts.
+        :param issue
+        :param gamma: 0 < gamma < 1, controls the growth of unbalanced value distributions when opponents send the same
+        offer over and over for a significant part of the negotiation.
         """
         res: List[float] = list()
 
@@ -284,7 +341,7 @@ class DistributionBasedFrequencyOpponentModel(UtilitySpace, OpponentModel):
 
         # calculate valuate for each value issue
         for value in self._domain.getValues(issue):
-            count = get_issue_val(value, freqs)
+            count = get_value_val(value, freqs)
             res.append((count / max_count) ** gamma)
 
         return res
