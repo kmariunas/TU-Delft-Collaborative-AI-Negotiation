@@ -210,9 +210,11 @@ class Ye(DefaultParty):
 
     def fitness2(self, bid: Bid) -> float:
         # u(w) + t^(1/e) * u'(w)
-        progress = 1 - self._progress.get(0)
+        progress = self._progress.get(0)
 
         profile = self._profile.getProfile()
+        bid_util = profile.getUtility(bid)
+        opponent_util = self.fn(bid)
         return float(profile.getUtility(bid)) + (progress ** (1 / self._e)) * self.fn(bid)
 
     def f5(self, bid: Bid) -> float:
