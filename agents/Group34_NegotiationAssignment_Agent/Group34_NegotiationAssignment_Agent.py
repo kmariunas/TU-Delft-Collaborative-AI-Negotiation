@@ -26,6 +26,7 @@ from geniusweb.progress.Progress import Progress
 
 from agents.Group34_NegotiationAssignment_Agent.DistributionBasedFrequencyOpponentModel import \
     DistributionBasedFrequencyOpponentModel
+from utils import OpponentModel
 
 
 class Ye(DefaultParty):
@@ -43,7 +44,8 @@ class Ye(DefaultParty):
         self._last_received_bid = None
         self._best_util: int = -sys.maxsize - 1
         self._received_bids: List[Bid] = list()
-        self._opponent_model: DistributionBasedFrequencyOpponentModel = None
+        #self._opponent_model: DistributionBasedFrequencyOpponentModel = None
+        self._opponent_model: OpponentModel = None
 
         basepath = path.dirname(__file__)
 
@@ -58,45 +60,83 @@ class Ye(DefaultParty):
 
         print(f"Iteration {finetune_params[0]} of Set{math.floor(finetune_params[0] / 112)}")
 
-        params = finetune_params[1][math.floor(finetune_params[0] / 112)]
+        #params = finetune_params[1][math.floor(finetune_params[0] / 112)]
 
-        self._e = params["e"]
-        self._to_factor = params["to_factor"]
+        self._e = 0.2
+        self._to_factor = 0.8
         self.our_last_sent_bid = None
-        self._window_size = params["window_size"]
-        self._max_concession = params["max_concession"]
-        self.fn = None
+        self._window_size = 10
+        self._max_concession = 0.4
+        self.fn = self.f5
+        self.alpha=1.05
+        self.beta = 0.05
+        self.time= 0.93
+        self.a_const = 0.91
+        self.ac = self.ac_avg
 
-        if params["fit"] == 1:
-            self.fittness_function = self.fitness
-        elif params["fit"] == 2:
-            self.fittness_function = self.fitness2
 
-        if params["fn"] == 1:
-            self.fn = self.f1
-        elif params["fn"] == 2:
-            self.fn = self.f2
-        elif params["fn"] == 3:
-            self.fn = self.f3
-        elif params["fn"] == 4:
-            self.fn = self.f4
-        elif params["fn"] == 5:
-            self.fn = self.f5
+        #
+        # if params["fit"] == 1:
+        #     self.fittness_function = self.fitness
+        # elif params["fit"] == 2:
+        #     self.fittness_function = self.fitness2
+        #
+        # if params["fn"] == 1:
+        #     self.fn = self.f1
+        # elif params["fn"] == 2:
+        #     self.fn = self.f2
+        # elif params["fn"] == 3:
+        #     self.fn = self.f3
+        # elif params["fn"] == 4:
+        #     self.fn = self.f4
+        # elif params["fn"] == 5:
+        #     self.fn = self.f5
+        #
+        # self.alpha = params["alpha"]
+        # self.beta = params["beta"]
+        # self.time = params["time"]
+        # self.a_const = params["a_const"]
 
-        self.alpha = params["alpha"]
-        self.beta = params["beta"]
-        self.time = params["time"]
-        self.a_const = params["a_const"]
 
-        if params["ac"] == 1:
-            self.ac = self.ac_max
-        elif params["ac"] == 2:
-            self.ac = self.ac_avg
 
-        finetune_params[0] = finetune_params[0] + 1
 
-        with open(path.abspath(path.join(basepath, "..", "..", "results/parameters_read.json")), "w") as f:
-            f.write(json.dumps(finetune_params, indent=2))
+        # self._e = params["e"]
+        # self._to_factor = params["to_factor"]
+        # self.our_last_sent_bid = None
+        # self._window_size = params["window_size"]
+        # self._max_concession = params["max_concession"]
+        # self.fn = None
+        #
+        # if params["fit"] == 1:
+        #     self.fittness_function = self.fitness
+        # elif params["fit"] == 2:
+        #     self.fittness_function = self.fitness2
+        #
+        # if params["fn"] == 1:
+        #     self.fn = self.f1
+        # elif params["fn"] == 2:
+        #     self.fn = self.f2
+        # elif params["fn"] == 3:
+        #     self.fn = self.f3
+        # elif params["fn"] == 4:
+        #     self.fn = self.f4
+        # elif params["fn"] == 5:
+        #     self.fn = self.f5
+        #
+        # self.alpha = params["alpha"]
+        # self.beta = params["beta"]
+        # self.time = params["time"]
+        # self.a_const = params["a_const"]
+
+        # if params["ac"] == 1:
+        #     self.ac = self.ac_max
+        # elif params["ac"] == 2:
+        #     self.ac = self.ac_avg
+        #
+        # finetune_params[0] = finetune_params[0] + 1
+        #
+        # with open(path.abspath(path.join(basepath, "..", "..", "results/parameters_read.json")), "w") as f:
+        #     f.write(json.dumps(finetune_params, indent=2))
 
     def notifyChange(self, info: Inform):
         """This is the entry point of all interaction with your agent after is has been initialised.
@@ -120,10 +160,12 @@ class Ye(DefaultParty):
                 info.getProfile().getURI(), self.getReporter()
             )
 
-            self._opponent_model = DistributionBasedFrequencyOpponentModel \
-                .create(self._window_size, alpha=1.3 / len(self._profile.getProfile().getDomain().getIssues())) \
-                .With(self._profile.getProfile().getDomain(), newResBid=None)
-            # self._opponent_model.dom
+            #self._opponent_model = DistributionBasedFrequencyOpponentModel \
+            #    .create(self._window_size, alpha=1.3 / len(self._profile.getProfile().getDomain().getIssues())) \
+            #    .With(self._profile.getProfile().getDomain(), newResBid=None)
+            self._opponent_model = OpponentModel(self._profile)
+
+
 
             self._bids_space = BidsWithUtility.create(self._profile.getProfile(), 6)
 
@@ -144,7 +186,7 @@ class Ye(DefaultParty):
                 self._received_bids.append(self._last_received_bid)
 
                 # add bid to opponent model
-                self._opponent_model = self._opponent_model.WithAction(action, self._progress)
+                #self._opponent_model = self._opponent_model.WithAction(action, self._progress)
 
         # YourTurn notifies you that it is your turn to act
         elif isinstance(info, YourTurn):
@@ -219,7 +261,8 @@ class Ye(DefaultParty):
 
     def f5(self, bid: Bid) -> float:
         # opponent utility
-        return float(self._opponent_model.getUtility(bid))
+        #return float(self._opponent_model.getUtility(bid))
+        return float(self._opponent_model.getOpponentUtility(bid))
 
     def f1(self, bid: Bid) -> float:
         # f1(ω) = 1 − |uˆo(ω) − uˆo (xlast)|
@@ -375,7 +418,8 @@ class Ye(DefaultParty):
     def _findBid(self) -> Bid:
         # TODO: figure out if opponent strategy and react to it
         if self._last_received_bid is not None:
-            self._received_bids_utilities.append(float(self._opponent_model.getUtility(self._last_received_bid)))
+            #self._received_bids_utilities.append(float(self._opponent_model.getUtility(self._last_received_bid)))
+            self._received_bids_utilities.append(float(self._opponent_model.getOpponentUtility(self._last_received_bid)))
             self.opponent_weights.append(self._opponent_model.getIssueWeights())
 
         if self.our_last_sent_bid is None:
