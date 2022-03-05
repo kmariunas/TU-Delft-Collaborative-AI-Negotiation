@@ -20,7 +20,7 @@ param_grid = {
     'fit': [1, 2]
 }
 
-n_iter = 1
+n_iter = 10
 
 param_list = list(ParameterSampler(param_grid, n_iter=n_iter,
                                    random_state=rng))
@@ -53,11 +53,12 @@ if not os.path.exists("results"):
 
 
 agents = [
+    ["agents.Group34_NegotiationAssignment_Agent.Group34_NegotiationAssignment_Agent.Ye", "agents.Group34_NegotiationAssignment_Agent.Group34_NegotiationAssignment_Agent.Ye"],
     ["agents.boulware_agent.boulware_agent.BoulwareAgent", "agents.Group34_NegotiationAssignment_Agent.Group34_NegotiationAssignment_Agent.Ye"],
     ["agents.conceder_agent.conceder_agent.ConcederAgent", "agents.Group34_NegotiationAssignment_Agent.Group34_NegotiationAssignment_Agent.Ye"],
-    # ["agents.hardliner_agent.hardliner_agent.HardlinerAgent", "agents.Group34_NegotiationAssignment_Agent.Group34_NegotiationAssignment_Agent.Ye"],
-    # ["agents.linear_agent.linear_agent.LinearAgent", "agents.Group34_NegotiationAssignment_Agent.Group34_NegotiationAssignment_Agent.Ye"],
-    # ["agents.random_agent.random_agent.RandomAgent", "agents.Group34_NegotiationAssignment_Agent.Group34_NegotiationAssignment_Agent.Ye"],
+    ["agents.hardliner_agent.hardliner_agent.HardlinerAgent", "agents.Group34_NegotiationAssignment_Agent.Group34_NegotiationAssignment_Agent.Ye"],
+    ["agents.linear_agent.linear_agent.LinearAgent", "agents.Group34_NegotiationAssignment_Agent.Group34_NegotiationAssignment_Agent.Ye"],
+    ["agents.random_agent.random_agent.RandomAgent", "agents.Group34_NegotiationAssignment_Agent.Group34_NegotiationAssignment_Agent.Ye"],
 ]
 
 random_search_summaries = []

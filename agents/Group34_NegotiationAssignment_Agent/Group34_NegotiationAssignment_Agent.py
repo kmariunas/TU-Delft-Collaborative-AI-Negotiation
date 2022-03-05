@@ -2,16 +2,15 @@ import json
 import logging
 import math
 import sys
-from os import path
 from decimal import Decimal
+from os import path
 from typing import cast, List, Dict
 
-from geniusweb.bidspace.Interval import Interval
 from geniusweb.actions.Accept import Accept
 from geniusweb.actions.Action import Action
 from geniusweb.actions.Offer import Offer
-from geniusweb.bidspace.AllBidsList import AllBidsList
 from geniusweb.bidspace.BidsWithUtility import BidsWithUtility
+from geniusweb.bidspace.Interval import Interval
 from geniusweb.inform.ActionDone import ActionDone
 from geniusweb.inform.Finished import Finished
 from geniusweb.inform.Inform import Inform
@@ -45,11 +44,6 @@ class Ye(DefaultParty):
         self._best_util: int = -sys.maxsize - 1
         self._received_bids: List[Bid] = list()
         self._opponent_model: DistributionBasedFrequencyOpponentModel = None
-        self._e = 0.2
-        self._to_factor = 0.7
-        self.our_last_sent_bid = None
-        self._window_size = 20
-        self._max_concession = 0.4
 
         basepath = path.dirname(__file__)
 
@@ -58,32 +52,51 @@ class Ye(DefaultParty):
 
         self.opponent_file_name = path.abspath(path.join(basepath, "..", "..", "results/opponent-weights.json"))
         self.opponent_weights: List[Dict[str, float]] = []
-        # # create text file in results
-        # filepath =
-        #
-        # # create file for writing
-        # created = False
-        # version = 0
-        # while not created:
-        #     try:
-        #         self._file_name = filepath + str(version) + ".txt"
-        #         print(self._file_name)
-        #         open(self._file_name, "x")
-        #         created = True
-        #     except Exception as e:
-        #         # print(e)
-        #         version += 1
-        #
-        # # created = False
-        # # version = 0
-        # # try:
-        # #     self._file_name = filepath + str(version) + ".txt"
-        # #     print(self._file_name)
-        # #     open(self._file_name, "x")
-        # #     created = True
-        # # except Exception as e:
-        # #     # print(e)
-        # #     version += 1
+
+        finetune_params = json.loads(open(path.abspath(path.join(basepath, "..", "..", "results/parameters_read.json")),
+                                          encoding='utf-8').read())
+
+        print(f"Iteration {finetune_params[0]} of Set{math.floor(finetune_params[0] / 20)}")
+
+        params = finetune_params[1][math.floor(finetune_params[0] / 8)]
+
+        self._e = params["e"]
+        self._to_factor = params["to_factor"]
+        self.our_last_sent_bid = None
+        self._window_size = params["window_size"]
+        self._max_concession = params["max_concession"]
+        self.fn = None
+
+        if params["fit"] == 1:
+            self.fittness_function = self.fitness
+        elif params["fit"] == 2:
+            self.fittness_function = self.fitness2
+
+        if params["fn"] == 1:
+            self.fn = self.f1
+        elif params["fn"] == 2:
+            self.fn = self.f2
+        elif params["fn"] == 3:
+            self.fn = self.f3
+        elif params["fn"] == 4:
+            self.fn = self.f4
+        elif params["fn"] == 5:
+            self.fn = self.f5
+
+        self.alpha = params["alpha"]
+        self.beta = params["beta"]
+        self.time = params["time"]
+        self.a_const = params["a_const"]
+
+        if params["ac"] == 1:
+            self.ac = self.ac_max
+        elif params["ac"] == 2:
+            self.ac = self.ac_avg
+
+        finetune_params[0] = finetune_params[0] + 1
+
+        with open(path.abspath(path.join(basepath, "..", "..", "results/parameters_read.json")), "w") as f:
+            f.write(json.dumps(finetune_params, indent=2))
 
     def notifyChange(self, info: Inform):
         """This is the entry point of all interaction with your agent after is has been initialised.
@@ -95,6 +108,7 @@ class Ye(DefaultParty):
         # a Settings message is the first message that will be sent to your
         # agent containing all the information about the negotiation session.
         if isinstance(info, Settings):
+
             self._settings: Settings = cast(Settings, info)
             self._me = self._settings.getID()
 
@@ -145,8 +159,9 @@ class Ye(DefaultParty):
             # terminate the agent MUST BE CALLED
             # print(self._opponent_model.getIssueWeights())
 
-            self.write_weights()
-            self.write_utilities()
+            # TODO: write files if you wanna do plots
+            # self.write_weights()
+            # self.write_utilities()
 
             self.terminate()
         else:
@@ -191,7 +206,14 @@ class Ye(DefaultParty):
 
         profile = self._profile.getProfile()
 
-        return F * float(profile.getUtility(bid)) + (1 - F) * self.f5(bid)
+        return F * float(profile.getUtility(bid)) + (1 - F) * self.fn(bid)
+
+    def fitness2(self, bid: Bid) -> float:
+        # u(w) + t^(1/e) * u'(w)
+        progress = 1 - self._progress.get(0)
+
+        profile = self._profile.getProfile()
+        return float(profile.getUtility(bid)) + (progress ** (1 / self._e)) * self.fn(bid)
 
     def f5(self, bid: Bid) -> float:
         # opponent utility
@@ -252,8 +274,9 @@ class Ye(DefaultParty):
         if self._profile.getProfile().getUtility(opponent_bid) > reservation_value:
             # check acceptance conditions
             # if any of them return True (bid is good) => return true
-            return self.ac_const(opponent_bid) or self.ac_next(opponent_bid, agent_bid) \
-                   or self.ac_max(opponent_bid)
+            return self.ac_const(opponent_bid, alpha=self.a_const) or \
+                   self.ac_next(opponent_bid, agent_bid, alpha=self.alpha, beta=self.beta) or \
+                   self.ac(opponent_bid, time=self.time)
         else:
             return False
 
@@ -348,23 +371,17 @@ class Ye(DefaultParty):
         return False
 
     def _findBid(self) -> Bid:
-        # TODO: go semi hardliner as negotiation approaches end ??
-        # TODO: figure out if opponent is hardlining => also be assholes
-        # compose a list of all possible bids
-        domain = self._profile.getProfile().getDomain()
-        # all_bids = AllBidsList(domain)
-
-        #############3
+        # TODO: figure out if opponent strategy and react to it
         if self._last_received_bid is not None:
             self._received_bids_utilities.append(float(self._opponent_model.getUtility(self._last_received_bid)))
             self.opponent_weights.append(self._opponent_model.getIssueWeights())
-        #############
 
         if self.our_last_sent_bid is None:
             max_util = 1.0
         else:
             max_util = float(self._profile.getProfile().getUtility(self.our_last_sent_bid))
 
+        # compose a list of all possible bids
         all_bids = self._bids_space.getBids(
             Interval(Decimal(max_util - self._max_concession), Decimal(max_util + 0.01)))
 
@@ -372,7 +389,7 @@ class Ye(DefaultParty):
         best_bid = None
 
         for bid in all_bids:
-            bid_util = self.fitness(bid)
+            bid_util = self.fittness_function(bid)
 
             if bid_util > best_util:
                 best_bid = bid
