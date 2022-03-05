@@ -9,8 +9,6 @@
 #
 
 
-import logging
-from random import randint
 from typing import cast
 
 from geniusweb.actions.Accept import Accept
@@ -42,24 +40,23 @@ class OpponentModel:
 #todo gotta do some clean up now! try and merge OpponentModelImproved and this class
 
 
-    def __init__(self):
+    def __init__(self, profile):
         self._issueWeights = None
 
         self._biddingHistory = []
-        self._issues = None
+        self._utilityBiddingHistory = None
         self._concessionRatioToWeight = 1 - np.arange(100)/100
         self._roundNumber = 1
-        self._concessionRatioDistributions = None
+        self._concessionRatioDistributions = []
+        self._reservationValue = 0
+        self._windows = []
+        self._profile = profile
+        self._issues = profile.getProfile().getDomain().getIssues()
+        self._frequencyModel = FrequencyOpponentModel.create().With(profile.getProfile().getDomain(), newResBid=None)
 
 
-        self._profile = None
 
-        self._frequencyModel = None
-    def setIssueWeights(self, issuesTotal):
-        self._issueWeights = np.ones(issuesTotal)
 
-    def setConcessionRatioDistributions(self, issuesTotal):
-        self._concessionRatioDistributions = np.array([])
 
 
     def updateBiddingHistory(self, newBid: Bid):
@@ -90,12 +87,12 @@ class OpponentModel:
 
 
         for counter,issue in enumerate(self._issues):
-            difference = self._frequencyModel._getFraction(issue, self._frequencyModel.val(previousBidValues[issue]))  - currentBidBidValues[issue]
-            concessionRatios[counter] = difference
+            ratio = self._frequencyModel._getFraction(issue, self._frequencyModel.val(currentBidBidValues[issue]))/self._frequencyModel._getFraction(issue, self._frequencyModel.val(previousBidValues[issue]))
+            concessionRatios[counter] = ratio
 
         self._concessionRatioDistributions.append(concessionRatios)
 
-        #
+
         for counter, concessionRatio in enumerate(concessionRatios):
             estimatedIssueWeights[counter] = self.mapConcessionRatiosToIssueWeights(concessionRatio)
         estimatedIssueWeights = estimatedIssueWeights/np.sum(estimatedIssueWeights)
@@ -109,35 +106,19 @@ class OpponentModel:
 
 
     def mapConcessionRatiosToIssueWeights(self,concessionRatio):
-        percentile = int(len(self._concessionRatioDistributions[self._concessionRatioDistributions<concessionRatio])*100/len(self._concessionRatioDistributions))
+
+        #vectorizing the array for convenience and speed
+        vectorizedConcessionRatioDistributions = np.array(self._concessionRatioDistributions)
+
+        # calculating in what percentile the concession ratio is
+        percentile = int(len(
+            vectorizedConcessionRatioDistributions[vectorizedConcessionRatioDistributions < concessionRatio])
+                         *100/len(self._concessionRatioDistributions))
         return self._concessionRatioToWeight[percentile]
 
 
     def notifyChange(self, info: Inform):
-        """This is the entry point of all interaction with your agent after is has been initialised.
-
-        Args:
-            info (Inform): Contains either a request for action or information.
-        """
-        # a Settings message is the first message that will be send to your
-        # agent containing all the information about the negotiation session.
-        if isinstance(info, Settings):
-            self._settings: Settings = cast(Settings, info)
-            self._me = self._settings.getID()
-
-            self._issues = self._settings.getProfile().getDomain().getIssues()
-
-            # progress towards the deadline has to be tracked manually through the use of the Progress object
-            self._progress: ProgressRounds = self._settings.getProgress()
-
-            # the profile contains the preferences of the agent over the domain
-            self._profile = ProfileConnectionFactory.create(
-                info.getProfile().getURI(), self.getReporter()
-            )
-            self._frequencyModel = FrequencyOpponentModel.create().With(self._profile.getProfile().getDomain(), newResBid=None)
-
-        # ActionDone is an action send by an opponent (an offer or an accept)
-        elif isinstance(info, ActionDone):
+        if isinstance(info, ActionDone):
             action: Action = cast(ActionDone, info).getAction()
 
             # if it is an offer, set the last received bid
@@ -145,8 +126,64 @@ class OpponentModel:
                 bid = cast(Offer, action).getBid()
                 #updates bidding history and weights
                 self.updateBiddingHistory(bid)
+    def estimateReservationValue(self):
+        self.updateUtilities()
+        self.detectWindows()
+
+        #the convolution reduce some noise
+        #todo maybe do some fun stuff with fourier, but gotta see first
+        utilityBiddingHistory = np.convolve(self._utilityBiddingHistory,np.ones(5)/5)
 
 
+        windowStart = 0
+
+        reservationValueEstimates = []
+
+        for windowFinish in self._windows:
+            maxLag =  windowStart - windowFinish
+
+            #every possible lag between 2 bids
+            for lag in range(maxLag):
+                tuples = np.empty(windowFinish - lag - windowStart)
+
+                #storing this in tuples of 2 bids
+                for x in range(windowStart,windowFinish - lag):
+                    tuples[x-windowStart] = (utilityBiddingHistory[x],utilityBiddingHistory[x+lag])
+                for x in range(len(tuples)-2):
+                    for y in range(x+1,len(tuples)):
+                        (u1_x, u2_x) = tuples[x]
+                        (u1_y, u2_y) = tuples[y]
+                        reservationValueEstimate = (u1_x * u2_y - u2_x * u1_y)/(u1_x - u2_x + u1_y - u2_y)
+                        # only add reservation value if it makes sense (so it's not negative or above the latest utility they offered)
+                        if(reservationValueEstimate <= utilityBiddingHistory[-1] and reservationValueEstimate >= 0):
+                            reservationValueEstimates.append(reservationValueEstimate)
+        reservationValueEstimates = np.array(reservationValueEstimate)
+        return np.mean(reservationValueEstimates)
+
+    def detectWindows(self):
+        firstDerivative = self._utilityBiddingHistory[0:-2] - self._utilityBiddingHistory[1:-1]
+        secondDerivative = np.abs(firstDerivative[0:-2] - firstDerivative[1:-1])
+        top20Percent = np.percentile(secondDerivative,80)
+
+        windows = np.sort(np.argwhere(secondDerivative>top20Percent))
+
+        previousWindowStart = 0
+
+        #returns only windows that are at least 10 rounds apart
+        for x in range(len(windows)):
+            if(previousWindowStart + 10 > windows[x]):
+                windows[x] = -1
+            else:
+                previousWindowStart = windows[x]
+
+
+        return windows[windows != -1]
+
+    def updateUtilities(self):
+        utilities = np.empty(len(self._biddingHistory))
+        for x,bid in enumerate(self._biddingHistory):
+            utilities[x] = self._frequencyModel.getUtility(bid)
+        self._utilityBiddingHistory = utilities
 
 
 
