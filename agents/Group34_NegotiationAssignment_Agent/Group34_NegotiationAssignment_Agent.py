@@ -48,15 +48,13 @@ class Ye(DefaultParty):
         self._e = 0.2
         self._to_factor = 0.7
         self.our_last_sent_bid = None
-        self._window_size = 2
+        self._window_size = 20
         self._max_concession = 0.4
-
 
         basepath = path.dirname(__file__)
 
         self._file_name = path.abspath(path.join(basepath, "..", "..", "results/received-bids-utilities.json"))
         self._received_bids_utilities: List[float] = []
-
 
         self.opponent_file_name = path.abspath(path.join(basepath, "..", "..", "results/opponent-weights.json"))
         self.opponent_weights: List[Dict[str, float]] = []
@@ -87,7 +85,6 @@ class Ye(DefaultParty):
         # #     # print(e)
         # #     version += 1
 
-
     def notifyChange(self, info: Inform):
         """This is the entry point of all interaction with your agent after is has been initialised.
 
@@ -109,8 +106,8 @@ class Ye(DefaultParty):
                 info.getProfile().getURI(), self.getReporter()
             )
 
-            self._opponent_model = DistributionBasedFrequencyOpponentModel\
-                .create(self._window_size)\
+            self._opponent_model = DistributionBasedFrequencyOpponentModel \
+                .create(self._window_size, alpha=1.3 / len(self._profile.getProfile().getDomain().getIssues())) \
                 .With(self._profile.getProfile().getDomain(), newResBid=None)
             # self._opponent_model.dom
 
@@ -119,7 +116,6 @@ class Ye(DefaultParty):
         # ActionDone is an action sent by an opponent (an offer or an accept)
         elif isinstance(info, ActionDone):
             action: Action = info.getAction()
-
 
             # if it is an offer, set the last received bid
             if isinstance(action, Offer) and action.getActor() is not self._me:
@@ -358,18 +354,19 @@ class Ye(DefaultParty):
         domain = self._profile.getProfile().getDomain()
         # all_bids = AllBidsList(domain)
 
-
-#############3
-        self._received_bids_utilities.append(float(self._opponent_model.getUtility(self._last_received_bid)))
-        self.opponent_weights.append(self._opponent_model.getIssueWeights())
-#############
+        #############3
+        if self._last_received_bid is not None:
+            self._received_bids_utilities.append(float(self._opponent_model.getUtility(self._last_received_bid)))
+            self.opponent_weights.append(self._opponent_model.getIssueWeights())
+        #############
 
         if self.our_last_sent_bid is None:
             max_util = 1.0
         else:
             max_util = float(self._profile.getProfile().getUtility(self.our_last_sent_bid))
 
-        all_bids = self._bids_space.getBids(Interval(Decimal(max_util - self._max_concession), Decimal(max_util + 0.01)))
+        all_bids = self._bids_space.getBids(
+            Interval(Decimal(max_util - self._max_concession), Decimal(max_util + 0.01)))
 
         best_util = -sys.maxsize - 1
         best_bid = None

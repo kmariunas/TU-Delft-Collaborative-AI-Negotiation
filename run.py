@@ -14,15 +14,14 @@ if not os.path.exists("results"):
 
 # issueA, issueB, etc
 actual_weights = {
-      "issueA": 0.05298,
-      "issueB": 0.14706,
-      "issueC": 0.47093,
-      "issueD": 0.20636,
-      "issueE": 0.12267
+      "issueA": 0.144,
+      "issueB": 0.1049,
+      "issueC": 0.7511
     }
 
-settings_opponent_name = "agents.boulware_agent.boulware_agent.BoulwareAgent"
-opponent_name = "agents_boulware_agent_boulware_agent_BoulwareAgent_1"
+domain = "domains/domain01/"
+settings_opponent_name = "agents.linear_agent.linear_agent.LinearAgent"
+opponent_name = "agents_linear_agent_linear_agent_LinearAgent_1"
 
 # Settings to run a negotiation session:
 #   We need to specify the classpath of 2 agents to start a negotiation.
@@ -34,7 +33,7 @@ settings = {
         "agents.Group34_NegotiationAssignment_Agent.Group34_NegotiationAssignment_Agent.Ye",
     ],
     # TODO: change actual utilities when you change domain
-    "profiles": ["domains/domain00/profileA.json", "domains/domain00/profileB.json"],
+    "profiles": [domain + "profileA.json", domain + "profileB.json"],
     "deadline_rounds": 200,
 }
 

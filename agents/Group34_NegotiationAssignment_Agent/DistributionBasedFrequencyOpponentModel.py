@@ -7,22 +7,12 @@ from geniusweb.actions.Offer import Offer
 from geniusweb.issuevalue.Bid import Bid
 from geniusweb.issuevalue.Domain import Domain
 from geniusweb.issuevalue.Value import Value
-from math import floor
-from decimal import Decimal
-from typing import Optional, Dict, List
-
-from geniusweb.actions.Offer import Offer
-from geniusweb.actions.Action import Action
-from geniusweb.issuevalue.Value import Value
-from geniusweb.issuevalue.Bid import Bid
-from geniusweb.issuevalue.Domain import Domain
 from geniusweb.opponentmodel.OpponentModel import OpponentModel
 from geniusweb.profile.utilityspace.UtilitySpace import UtilitySpace
 from geniusweb.progress.Progress import Progress
 from geniusweb.references.Parameters import Parameters
 from geniusweb.utils import val, HASH, toStr
 from scipy.stats import chi2
-from scipy.stats import chisquare
 
 
 def get_issue_max_count(freqs: Dict[Value, int]) -> int:
@@ -59,22 +49,7 @@ def get_value_val(value: Value, freqs: Dict[Value, int]) -> float:
     return (count + 1) / max_count  # Laplace smoothing
 
 
-def chi2_squared_test(observed: List[float], expected: List[float]) -> float:
-    """
-    Method returns the chi squared test for two probability distributions
 
-    :param observed: observed frequency
-    :param expected: expected frequency
-    """
-    sum1 = sum(observed)
-    sum2 = sum(expected)
-    if not isclose(sum1, sum2, rel_tol=1e-05) or len(observed) != len(expected):
-        raise ValueError("Lists should have the same length and sum of elements")
-    x2 = 0  # chi squared test
-    for i in range(0, len(observed)):
-        x2 += ((observed[i] - expected[i]) ** 2) / (expected[i] ** 2)
-        # divide by expected value squared because passed arguments have < 1 values
-    return x2
 
 
 class DistributionBasedFrequencyOpponentModel(UtilitySpace, OpponentModel):
@@ -96,6 +71,25 @@ class DistributionBasedFrequencyOpponentModel(UtilitySpace, OpponentModel):
         3. slow growth of issue values importance
         4. weaker assumptions on the opponent's behaviour
     """
+
+    def chi2_squared_test(self, observed: List[float], expected: List[float]) -> float:
+        """
+        Method returns the chi squared test for two probability distributions
+
+        :param observed: observed frequency
+        :param expected: expected frequency
+        """
+        sum1 = sum(observed)
+        sum2 = sum(expected)
+        if not isclose(sum1, sum2, rel_tol=1e-05) or len(observed) != len(expected):
+            print(sum1)
+            print(sum2)
+            raise ValueError("Lists should have the same length and sum of elements")
+        x2 = 0  # chi squared test
+        for i in range(0, len(observed)):
+            x2 += ((observed[i] - expected[i]) ** 2) / (expected[i] ** 2)
+            # divide by expected value squared because passed arguments have < 1 values
+        return x2
 
     def __init__(self,
                  finished_first_window: bool,
@@ -135,7 +129,6 @@ class DistributionBasedFrequencyOpponentModel(UtilitySpace, OpponentModel):
                 for issue in domain.getIssues():
                     issue_weights[issue] = 1 / num_issues
                 # TODO: change this if you wanna change alpha
-                self._alpha = 1 / num_issues
             # init window size
             # if negotiation_rounds != -1:
             #     self._window_size = floor(negotiation_rounds * window_fraction)
@@ -151,7 +144,7 @@ class DistributionBasedFrequencyOpponentModel(UtilitySpace, OpponentModel):
         self._beta = beta
 
     @staticmethod
-    def create(window_size, gamma: float = 0.25, alpha: float = 0.1, beta: float = 5) \
+    def create(window_size, gamma: float = 0.25, alpha: float = 0.1, beta: float = 3) \
             -> "DistributionBasedFrequencyOpponentModel":
         """
         Method creates a DistributionBasedFrequencyOpponentModel with the passed params.
@@ -213,14 +206,14 @@ class DistributionBasedFrequencyOpponentModel(UtilitySpace, OpponentModel):
             return self
 
         bid: Bid = action.getBid()
-        current_window, new_freqs = self._add_bid(bid)
+        self._current_window, self._bidFrequencies = self._add_bid(bid)
 
         # check if current window is full
         if self._cw_bids_count == self._window_size:
             if not self._finished_first_window:
-                return DistributionBasedFrequencyOpponentModel(True, self._domain, self._issue_weights, current_window,
+                return DistributionBasedFrequencyOpponentModel(True, self._domain, self._issue_weights, self._current_window,
                                                                {iss: {} for iss in self._domain.getIssues()},
-                                                               new_freqs, 0, self._resBid,
+                                                               self._bidFrequencies, 0, self._resBid,
                                                                window_size=self._window_size, gamma=self._gamma,
                                                                alpha=self._alpha,
                                                                beta=self._beta)
@@ -230,11 +223,11 @@ class DistributionBasedFrequencyOpponentModel(UtilitySpace, OpponentModel):
 
             for issue in self._domain.getIssues():
                 prev_window_freqs = self._get_freq(self._prev_window[issue], issue)
-                curr_window_freqs = self._get_freq(current_window[issue], issue)
+                curr_window_freqs = self._get_freq(self._current_window[issue], issue)
 
                 # use p_value of Chi Square test to determine if the distribution of issue values for 'issue' has
                 # changed from the previous window of offers to the current one
-                x2 = chi2_squared_test(prev_window_freqs, curr_window_freqs)
+                x2 = self.chi2_squared_test(prev_window_freqs, curr_window_freqs)
                 p_val = chi2.sf(x2, 1)  # one degree of freedom
 
                 # null hypothesis cannot be rejected
@@ -265,12 +258,13 @@ class DistributionBasedFrequencyOpponentModel(UtilitySpace, OpponentModel):
                 for k, v in new_weights.items():
                     new_weights[k] = v / weights_sum
                 self._issue_weights = new_weights
+                print("updated weights")
 
             # update current and previous window
             return DistributionBasedFrequencyOpponentModel(self._finished_first_window, self._domain,
-                                                           self._issue_weights, current_window,
+                                                           self._issue_weights, self._current_window,
                                                            {iss: {} for iss in self._domain.getIssues()},
-                                                           new_freqs, 0, self._resBid,
+                                                           self._bidFrequencies, 0, self._resBid,
                                                            window_size=self._window_size, gamma=self._gamma,
                                                            alpha=self._alpha,
                                                            beta=self._beta)
@@ -278,7 +272,8 @@ class DistributionBasedFrequencyOpponentModel(UtilitySpace, OpponentModel):
         else:
             return DistributionBasedFrequencyOpponentModel(self._finished_first_window, self._domain,
                                                            self._issue_weights, self._prev_window,
-                                                           current_window, new_freqs, self._cw_bids_count,
+                                                           self._current_window, self._bidFrequencies,
+                                                           self._cw_bids_count,
                                                            self._resBid, self._window_size, gamma=self._gamma,
                                                            alpha=self._alpha, beta=self._beta)
 
