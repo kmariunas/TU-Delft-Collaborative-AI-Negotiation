@@ -176,6 +176,9 @@ class DistributionBasedFrequencyOpponentModel(UtilitySpace, OpponentModel):
             raise ValueError("domain is not initialized")
         utility = 0
 
+        if bid is None:
+            return Decimal(1)
+
         for issue in val(self._domain).getIssues():
             if issue in bid.getIssues():
                 value = val(bid.getValue(issue))
