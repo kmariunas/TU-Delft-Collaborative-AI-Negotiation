@@ -55,6 +55,7 @@ if not os.path.exists("results"):
 agents = [
     ["agents.Group34_NegotiationAssignment_Agent.Group34_NegotiationAssignment_Agent.Ye", "agents.Group34_NegotiationAssignment_Agent.Group34_NegotiationAssignment_Agent.Ye"],
     ["agents.boulware_agent.boulware_agent.BoulwareAgent", "agents.Group34_NegotiationAssignment_Agent.Group34_NegotiationAssignment_Agent.Ye"],
+    ["agents.agent_bribery.agent_bribery.AgentBribery", "agents.Group34_NegotiationAssignment_Agent.Group34_NegotiationAssignment_Agent.Ye"],
     ["agents.conceder_agent.conceder_agent.ConcederAgent", "agents.Group34_NegotiationAssignment_Agent.Group34_NegotiationAssignment_Agent.Ye"],
     ["agents.hardliner_agent.hardliner_agent.HardlinerAgent", "agents.Group34_NegotiationAssignment_Agent.Group34_NegotiationAssignment_Agent.Ye"],
     ["agents.linear_agent.linear_agent.LinearAgent", "agents.Group34_NegotiationAssignment_Agent.Group34_NegotiationAssignment_Agent.Ye"],
@@ -84,7 +85,13 @@ for i in range(0, n_iter):
             "agents": agent_duo,
             "profile_sets": [
                 ["domains/domain00/profileA.json", "domains/domain00/profileB.json"],
+                ["domains/domain01/profileA.json", "domains/domain01/profileB.json"],
+                ["domains/domain02/profileA.json", "domains/domain02/profileB.json"],
+                ["domains/domain03/profileA.json", "domains/domain03/profileB.json"],
+                ["domains/domain04/profileA.json", "domains/domain04/profileB.json"],
+                ["domains/domain05/profileA.json", "domains/domain05/profileB.json"],
                 ["domains/domain06/profileA.json", "domains/domain06/profileB.json"],
+                ["domains/domain07/profileA.json", "domains/domain07/profileB.json"]
 
             ],
             "deadline_rounds": 200,
