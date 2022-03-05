@@ -2,7 +2,7 @@ import json
 import os
 
 from sklearn.model_selection import ParameterSampler
-from scipy.stats.distributions import uniform
+from scipy.stats import uniform
 import numpy as np
 
 rng = np.random.RandomState(0)
@@ -12,17 +12,17 @@ param_grid = {
     'window_size': [2, 5, 10, 20, 40],
     'max_concession': uniform(0, 0.5),
     'fn': [1, 2, 3, 4, 5],
-    'alpha': uniform(0.9, 1.2),
+    'alpha': uniform(0.9, 0.3),
     'beta': uniform(0, 0.2),
-    'time': uniform(0.8, 0.98),
-    'a_const': uniform(0.8, 0.95),
+    'time': uniform(0.8, 0.18),
+    'a_const': uniform(0.8, 0.15),
     'ac': [1, 2],
     'fit': [1, 2]
 }
 
 n_iter = 10
 
-param_list = list(ParameterSampler(param_grid, n_iter=n_iter,
+param_list = list(ParameterSampler(param_distributions=param_grid, n_iter=n_iter,
                                    random_state=rng))
 rounded_list = [0, [dict((k, round(v, 6)) for (k, v) in d.items())
                     for d in param_list]]
