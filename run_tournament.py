@@ -5,7 +5,7 @@ from sklearn.model_selection import ParameterSampler
 from scipy.stats import uniform
 import numpy as np
 
-rng = np.random.RandomState(0)
+# rng = np.random.RandomState(0)
 param_grid = {
     'e': uniform(0, 0.5),
     'to_factor': uniform(0, 1),
@@ -22,20 +22,17 @@ param_grid = {
 
 n_iter = 10
 
-param_list = list(ParameterSampler(param_distributions=param_grid, n_iter=n_iter,
-                                   random_state=rng))
+param_list = list(ParameterSampler(param_distributions=param_grid, n_iter=n_iter))
 rounded_list = [0, [dict((k, round(v, 6)) for (k, v) in d.items())
                     for d in param_list]]
 
 
-
-with open("results/parameters.json", "w") as f:
-    f.write(json.dumps(rounded_list, indent=2))
-
+#
+# with open("results/parameters.json", "w") as f:
+#     f.write(json.dumps(rounded_list, indent=2))
+print(rounded_list)
 with open("results/parameters_read.json", "w") as f:
     f.write(json.dumps(rounded_list, indent=2))
-
-print(rounded_list)
 
 
 from utils.runners import run_tournament
@@ -53,7 +50,7 @@ if not os.path.exists("results"):
 
 
 agents = [
-    ["agents.Group34_NegotiationAssignment_Agent.Group34_NegotiationAssignment_Agent.Ye", "agents.Group34_NegotiationAssignment_Agent.Group34_NegotiationAssignment_Agent.Ye"],
+    # ["agents.Group34_NegotiationAssignment_Agent.Group34_NegotiationAssignment_Agent.Ye", "agents.Group34_NegotiationAssignment_Agent.Group34_NegotiationAssignment_Agent.Ye"],
     ["agents.boulware_agent.boulware_agent.BoulwareAgent", "agents.Group34_NegotiationAssignment_Agent.Group34_NegotiationAssignment_Agent.Ye"],
     ["agents.agent_bribery.agent_bribery.AgentBribery", "agents.Group34_NegotiationAssignment_Agent.Group34_NegotiationAssignment_Agent.Ye"],
     ["agents.conceder_agent.conceder_agent.ConcederAgent", "agents.Group34_NegotiationAssignment_Agent.Group34_NegotiationAssignment_Agent.Ye"],

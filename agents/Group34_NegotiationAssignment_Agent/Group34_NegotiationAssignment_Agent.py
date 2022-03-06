@@ -56,9 +56,9 @@ class Ye(DefaultParty):
         finetune_params = json.loads(open(path.abspath(path.join(basepath, "..", "..", "results/parameters_read.json")),
                                           encoding='utf-8').read())
 
-        print(f"Iteration {finetune_params[0]} of Set{math.floor(finetune_params[0] / 112)}")
+        print(f"Iteration {finetune_params[0]} of Set{math.floor(finetune_params[0] / 96)}")
 
-        params = finetune_params[1][math.floor(finetune_params[0] / 112)]
+        params = finetune_params[1][math.floor(finetune_params[0] / 96)]
 
         self._e = params["e"]
         self._to_factor = params["to_factor"]
