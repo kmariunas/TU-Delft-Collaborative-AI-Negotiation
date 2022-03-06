@@ -195,10 +195,11 @@ class Ye(DefaultParty):
         # Finished will be sent if the negotiation has ended (through agreement or deadline)
         elif isinstance(info, Finished):
             # terminate the agent MUST BE CALLED
+            # print(self._opponent_model.getIssueWeights())
 
             # TODO: write files if you wanna do plots
-            self.write_weights()
-            self.write_utilities()
+            # self.write_weights()
+            # self.write_utilities()
 
             self.terminate()
         else:
@@ -242,8 +243,8 @@ class Ye(DefaultParty):
         F = self.big_f()
 
         profile = self._profile.getProfile()
-        res = F * float(profile.getUtility(bid)) + (1 - F) * self.fn(bid)
-        return res
+
+        return F * float(profile.getUtility(bid)) + (1 - F) * self.fn(bid)
 
     def fitness2(self, bid: Bid) -> float:
         # u(w) + t^(1/e) * u'(w)
@@ -256,9 +257,7 @@ class Ye(DefaultParty):
 
     def f5(self, bid: Bid) -> float:
         # opponent utility
-        #return float(self._opponent_model.getUtility(bid))
-        res = float(self._opponent_model.getOpponentUtility(bid))
-        return res
+        return float(self._opponent_model.getOpponentUtility(bid))
 
     def f1(self, bid: Bid) -> float:
         # f1(ω) = 1 − |uˆo(ω) − uˆo (xlast)|
@@ -280,9 +279,6 @@ class Ye(DefaultParty):
     def _myTurn(self):
         # find a bid to propose as counter offer
         bid = self._findBid()
-
-        # self._received_bids_utilities.append(self._opponent_model.getOpponentUtility(bid))
-        # self.opponent_weights.append()
 
         # check if the last received offer if the opponent is good enough
         if self._isGood(self._last_received_bid, bid):
@@ -416,7 +412,6 @@ class Ye(DefaultParty):
     def _findBid(self) -> Bid:
         # TODO: figure out if opponent strategy and react to it
         if self._last_received_bid is not None:
-            #self._received_bids_utilities.append(float(self._opponent_model.getUtility(self._last_received_bid)))
             self._received_bids_utilities.append(float(self._opponent_model.getOpponentUtility(self._last_received_bid)))
             self.opponent_weights.append(self._opponent_model.getIssueWeights())
 
@@ -438,7 +433,6 @@ class Ye(DefaultParty):
             if bid_util > best_util:
                 best_bid = bid
                 best_util = bid_util
-
 
         return best_bid
 

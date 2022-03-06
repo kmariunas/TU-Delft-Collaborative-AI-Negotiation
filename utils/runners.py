@@ -62,7 +62,7 @@ def run_session(settings) -> Tuple[dict, dict]:
                     }
                 },
             ],
-            "deadline": {"DeadlineRounds": {"rounds": rounds, "durationms": 6000000}},
+            "deadline": {"DeadlineRounds": {"rounds": rounds, "durationms": 60000}},
         }
     }
 
