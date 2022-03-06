@@ -53,6 +53,7 @@ def get_value_val(value: Value, freqs: Dict[Value, int]) -> float:
 
 
 class DistributionBasedFrequencyOpponentModel(UtilitySpace, OpponentModel):
+
     _DECIMALS = 4
 
     """
@@ -82,8 +83,7 @@ class DistributionBasedFrequencyOpponentModel(UtilitySpace, OpponentModel):
         sum1 = sum(observed)
         sum2 = sum(expected)
         if not isclose(sum1, sum2, rel_tol=1e-05) or len(observed) != len(expected):
-            print(sum1)
-            print(sum2)
+
             raise ValueError("Lists should have the same length and sum of elements")
         x2 = 0  # chi squared test
         for i in range(0, len(observed)):
@@ -178,11 +178,9 @@ class DistributionBasedFrequencyOpponentModel(UtilitySpace, OpponentModel):
 
         if bid is None:
             return Decimal(1)
-
         for issue in val(self._domain).getIssues():
             if issue in bid.getIssues():
                 value = val(bid.getValue(issue))
-
                 utility += get_value_val(value, self._bidFrequencies[issue]) * self._issue_weights.get(issue)
         return Decimal(round(utility, DistributionBasedFrequencyOpponentModel._DECIMALS))
 
@@ -210,7 +208,6 @@ class DistributionBasedFrequencyOpponentModel(UtilitySpace, OpponentModel):
 
         bid: Bid = action.getBid()
         self._current_window, self._bidFrequencies = self._add_bid(bid)
-
         # check if current window is full
         if self._cw_bids_count == self._window_size:
             if not self._finished_first_window:
@@ -261,7 +258,6 @@ class DistributionBasedFrequencyOpponentModel(UtilitySpace, OpponentModel):
                 for k, v in new_weights.items():
                     new_weights[k] = v / weights_sum
                 self._issue_weights = new_weights
-                print("updated weights")
 
             # update current and previous window
             return DistributionBasedFrequencyOpponentModel(self._finished_first_window, self._domain,
@@ -354,10 +350,11 @@ class DistributionBasedFrequencyOpponentModel(UtilitySpace, OpponentModel):
         # calculate valuate for each value issue
         for value in self._domain.getValues(issue):
             count = get_value_val(value, freqs)
-            res.append((count / max_count) ** gamma)
-
         return res
 
+    def getValueVal(self, value: Value, issue):
+        freqs = self._bidFrequencies[issue]
+        return get_value_val(value,freqs)
     # Override
     def getReservationBid(self) -> Optional[Bid]:
         return self._resBid

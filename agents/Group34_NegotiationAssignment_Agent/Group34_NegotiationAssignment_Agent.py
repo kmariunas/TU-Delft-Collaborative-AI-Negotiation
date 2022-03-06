@@ -26,7 +26,7 @@ from geniusweb.progress.Progress import Progress
 
 from agents.Group34_NegotiationAssignment_Agent.DistributionBasedFrequencyOpponentModel import \
     DistributionBasedFrequencyOpponentModel
-from utils import OpponentModel
+from agents.Group34_NegotiationAssignment_Agent.OpponentModel import OpponentModel
 
 
 class Ye(DefaultParty):
@@ -44,7 +44,7 @@ class Ye(DefaultParty):
         self._last_received_bid = None
         self._best_util: int = -sys.maxsize - 1
         self._received_bids: List[Bid] = list()
-        #self._opponent_model: DistributionBasedFrequencyOpponentModel = None
+        #self._frequencyModel: DistributionBasedFrequencyOpponentModel = None
         self._opponent_model: OpponentModel = None
 
         basepath = path.dirname(__file__)
@@ -55,23 +55,21 @@ class Ye(DefaultParty):
         self.opponent_file_name = path.abspath(path.join(basepath, "..", "..", "results/opponent-weights.json"))
         self.opponent_weights: List[Dict[str, float]] = []
 
-        finetune_params = json.loads(open(path.abspath(path.join(basepath, "..", "..", "results/parameters_read.json")),
-                                          encoding='utf-8').read())
+        # finetune_params = json.loads(open(path.abspath(path.join(basepath, "..", "..", "results/parameters_read.json")),
+        #                                   encoding='utf-8').read())
 
-        print(f"Iteration {finetune_params[0]} of Set{math.floor(finetune_params[0] / 112)}")
 
-        #params = finetune_params[1][math.floor(finetune_params[0] / 112)]
 
-        self._e = 0.2
-        self._to_factor = 0.8
+        self._e = 0.139
+        self._to_factor = 0.841
         self.our_last_sent_bid = None
-        self._window_size = 10
-        self._max_concession = 0.4
-        self.fn = self.f5
-        self.alpha=1.05
-        self.beta = 0.05
-        self.time= 0.93
-        self.a_const = 0.91
+        self._window_size = 20
+        self._max_concession = 0.421
+        self.fn = self.f4
+        self.alpha=1.176
+        self.beta = 0.017
+        self.time= 0.916
+        self.a_const = 0.878
         self.ac = self.ac_avg
 
 
@@ -159,13 +157,10 @@ class Ye(DefaultParty):
             self._profile = ProfileConnectionFactory.create(
                 info.getProfile().getURI(), self.getReporter()
             )
-
-            #self._opponent_model = DistributionBasedFrequencyOpponentModel \
-            #    .create(self._window_size, alpha=1.3 / len(self._profile.getProfile().getDomain().getIssues())) \
-            #    .With(self._profile.getProfile().getDomain(), newResBid=None)
             self._opponent_model = OpponentModel(self._profile)
-
-
+            self._opponent_model.frequencyModel = DistributionBasedFrequencyOpponentModel \
+               .create(self._window_size, alpha=1.3 / len(self._profile.getProfile().getDomain().getIssues())) \
+               .With(self._profile.getProfile().getDomain(), newResBid=None)
 
             self._bids_space = BidsWithUtility.create(self._profile.getProfile(), 6)
 
@@ -186,7 +181,8 @@ class Ye(DefaultParty):
                 self._received_bids.append(self._last_received_bid)
 
                 # add bid to opponent model
-                #self._opponent_model = self._opponent_model.WithAction(action, self._progress)
+                self._opponent_model.frequencyModel = self._opponent_model.frequencyModel.WithAction(action, self._progress)
+                self._opponent_model.updateBiddingHistory(self._last_received_bid)
 
         # YourTurn notifies you that it is your turn to act
         elif isinstance(info, YourTurn):
@@ -199,11 +195,10 @@ class Ye(DefaultParty):
         # Finished will be sent if the negotiation has ended (through agreement or deadline)
         elif isinstance(info, Finished):
             # terminate the agent MUST BE CALLED
-            # print(self._opponent_model.getIssueWeights())
 
             # TODO: write files if you wanna do plots
-            # self.write_weights()
-            # self.write_utilities()
+            self.write_weights()
+            self.write_utilities()
 
             self.terminate()
         else:
@@ -247,8 +242,8 @@ class Ye(DefaultParty):
         F = self.big_f()
 
         profile = self._profile.getProfile()
-
-        return F * float(profile.getUtility(bid)) + (1 - F) * self.fn(bid)
+        res = F * float(profile.getUtility(bid)) + (1 - F) * self.fn(bid)
+        return res
 
     def fitness2(self, bid: Bid) -> float:
         # u(w) + t^(1/e) * u'(w)
@@ -262,7 +257,8 @@ class Ye(DefaultParty):
     def f5(self, bid: Bid) -> float:
         # opponent utility
         #return float(self._opponent_model.getUtility(bid))
-        return float(self._opponent_model.getOpponentUtility(bid))
+        res = float(self._opponent_model.getOpponentUtility(bid))
+        return res
 
     def f1(self, bid: Bid) -> float:
         # f1(ω) = 1 − |uˆo(ω) − uˆo (xlast)|
@@ -284,6 +280,9 @@ class Ye(DefaultParty):
     def _myTurn(self):
         # find a bid to propose as counter offer
         bid = self._findBid()
+
+        # self._received_bids_utilities.append(self._opponent_model.getOpponentUtility(bid))
+        # self.opponent_weights.append()
 
         # check if the last received offer if the opponent is good enough
         if self._isGood(self._last_received_bid, bid):
@@ -308,7 +307,6 @@ class Ye(DefaultParty):
         if opponent_bid is None:
             return False
 
-        # print(2*int(self._progress.get(0) * 200), " - ", self._opponent_model.getUtility(opponent_bid))
 
         reservation_bid = self._profile.getProfile().getReservationBid()
         if reservation_bid is not None:
@@ -435,11 +433,12 @@ class Ye(DefaultParty):
         best_bid = None
 
         for bid in all_bids:
-            bid_util = self.fittness_function(bid)
+            bid_util = self.fitness(bid)
 
             if bid_util > best_util:
                 best_bid = bid
                 best_util = bid_util
+
 
         return best_bid
 
